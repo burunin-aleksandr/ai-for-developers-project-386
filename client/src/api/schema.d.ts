@@ -31,6 +31,24 @@ export interface paths {
         /** @description Список типов встреч владельца. */
         get: operations["listMeetingTypes"];
         put?: never;
+        /** @description Создать тип встречи. */
+        post: operations["createMeetingType"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/meeting-types/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Отредактировать тип встречи. Удаление не предусмотрено. */
+        put: operations["updateMeetingType"];
         post?: never;
         delete?: never;
         options?: never;
@@ -54,6 +72,18 @@ export interface components {
         MeetingType: {
             /** Format: int64 */
             id: number;
+            /** @description Название типа встречи */
+            name: string;
+            /** @description Описание типа встречи */
+            description?: string;
+            /**
+             * @description Длительность в минутах (пресет)
+             * @enum {number}
+             */
+            durationMinutes: 15 | 30 | 45 | 60;
+        };
+        /** @description Входные данные типа встречи (без id). */
+        MeetingTypeInput: {
             /** @description Название типа встречи */
             name: string;
             /** @description Описание типа встречи */
@@ -111,6 +141,56 @@ export interface operations {
                     "application/json": {
                         meetingTypes: components["schemas"]["MeetingType"][];
                     };
+                };
+            };
+        };
+    };
+    createMeetingType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingTypeInput"];
+            };
+        };
+        responses: {
+            /** @description The request has succeeded and a new resource has been created as a result. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingType"];
+                };
+            };
+        };
+    };
+    updateMeetingType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeetingTypeInput"];
+            };
+        };
+        responses: {
+            /** @description The request has succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingType"];
                 };
             };
         };

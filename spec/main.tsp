@@ -45,3 +45,35 @@ op listMeetingTypes(): {
     meetingTypes: MeetingType[];
   };
 };
+
+@post
+@route("/meeting-types")
+@doc("Создать тип встречи.")
+op createMeetingType(
+  @body body: MeetingTypeInput,
+): {
+  @statusCode _: 201;
+  @body body: MeetingType;
+};
+
+@put
+@route("/meeting-types/{id}")
+@doc("Отредактировать тип встречи. Удаление не предусмотрено.")
+op updateMeetingType(
+  @path id: int64,
+  @body body: MeetingTypeInput,
+): {
+  @body body: MeetingType;
+};
+
+/** Входные данные типа встречи (без id). */
+model MeetingTypeInput {
+  @doc("Название типа встречи")
+  name: string;
+
+  @doc("Описание типа встречи")
+  description?: string;
+
+  @doc("Длительность в минутах (пресет)")
+  durationMinutes: DurationMinutes;
+}
