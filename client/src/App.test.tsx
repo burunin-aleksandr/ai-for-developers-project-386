@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createServer, type Server } from "node:http";
 import App from "./App";
+import { fmtDate, plusDays, todayInDisplayZone, weekStartOf } from "./dates";
 import type { AddressInfo } from "node:net";
 
 let server: Server;
@@ -25,6 +26,30 @@ beforeEach(async () => {
       res.end(JSON.stringify(body));
     };
 
+    if (req.method === "GET" && url.pathname === "/slots") {
+      const date = url.searchParams.get("date") ?? "";
+      const d = new Date(`${date}T00:00:00.000Z`);
+      const offset = (d.getUTCDay() + 6) % 7;
+      d.setUTCDate(d.getUTCDate() - offset);
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const day = new Date(d);
+        day.setUTCDate(d.getUTCDate() + i);
+        const dateStr = day.toISOString().slice(0, 10);
+        // первый слот дня сдвигается на час с индексом дня — дни различимы во времени
+        const hour = String(7 + i).padStart(2, "0");
+        const slots = [0, 1, 2].map((j) => ({
+          start: `${dateStr}T${hour}:${String(j * 15).padStart(2, "0")}:00.000Z`,
+          end: `${dateStr}T${hour}:${String(j * 15 + 15).padStart(2, "0")}:00.000Z`,
+          status: i === 0 && j === 0 ? "busy" : "free",
+        }));
+        return {
+          date: dateStr,
+          freeCount: slots.filter((s) => s.status === "free").length,
+          slots,
+        };
+      });
+      return send(200, { weekStart: days[0].date, days });
+    }
     if (req.method === "GET" && url.pathname === "/meeting-types") {
       return send(200, { meetingTypes: types });
     }
@@ -155,5 +180,107 @@ describe("страницы: типы встреч", () => {
     await screen.findByRole("button", { name: "Редактировать" });
 
     expect(screen.queryByRole("button", { name: "Удалить" })).toBeNull();
+  });
+});
+
+/** Понедельник текущей недели — как его вычисляет приложение (UTC+3). */
+function mondayOfToday(): string {
+  return weekStartOf(todayInDisplayZone());
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+describe("страницы: недельный календарь", () => {
+  test("выбор типа встречи открывает недельный календарь", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча 15 минут", durationMinutes: 15 }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+
+    expect(
+      (await screen.findAllByRole("button", { name: /Свободно: 3/ })).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "←" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "→" })).toBeInTheDocument();
+  });
+
+  test("стрелки листают неделю вперёд и назад", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+    await screen.findAllByRole("button", { name: /Свободно: \d+/ });
+
+    await userEvent.click(screen.getByRole("button", { name: "→" }));
+    expect(
+      await screen.findByRole("button", {
+        name: new RegExp(escapeRe(fmtDate(plusDays(mondayOfToday(), 7)))),
+      }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "←" }));
+    expect(
+      await screen.findByRole("button", {
+        name: new RegExp(escapeRe(fmtDate(mondayOfToday()))),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  test("слоты показываются со статусами «Свободно» и «Занято»", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+
+    expect(await screen.findAllByText("Свободно")).not.toHaveLength(0);
+    expect(await screen.findAllByText("Занято")).not.toHaveLength(0);
+  });
+
+  test("слоты дня видны после выбора ячейки дня", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+    // по умолчанию открыт понедельник (слоты в 10:00 UTC+3)
+    expect(await screen.findByText("10:00")).toBeInTheDocument();
+
+    // фейковый сервер сдвигает час слота по индексу дня: вторник = 11:00
+    const tuesday = fmtDate(plusDays(mondayOfToday(), 1));
+    await userEvent.click(
+      screen.getByRole("button", { name: new RegExp(escapeRe(tuesday)) }),
+    );
+
+    expect(await screen.findByText("11:00")).toBeInTheDocument();
+    expect(screen.queryByText("10:00")).toBeNull();
   });
 });

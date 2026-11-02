@@ -56,10 +56,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Слоты недели для гостя. Считаются на лету для даты, попадающей в нужную неделю. */
+        get: operations["listSlots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Один день недели со слотами. */
+        DaySlots: {
+            /**
+             * Format: date
+             * @description Дата дня (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Format: int32
+             * @description Сколько слотов свободно в дне
+             */
+            freeCount: number;
+            /** @description Слоты дня (в UTC), прошедшее время скрыто */
+            slots: components["schemas"]["Slot"][];
+        };
         /** @description Ответ health-check сервиса. */
         HealthStatus: {
             /**
@@ -93,6 +125,34 @@ export interface components {
              * @enum {number}
              */
             durationMinutes: 15 | 30 | 45 | 60;
+        };
+        /** @description Слот недели. Время хранится в UTC; отображение — UTC+3. */
+        Slot: {
+            /**
+             * Format: date-time
+             * @description Начало слота (UTC)
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Конец слота (UTC)
+             */
+            end: string;
+            /**
+             * @description Статус: free — свободно, busy — занято
+             * @enum {string}
+             */
+            status: "free" | "busy";
+        };
+        /** @description Неделя бронирования: пн–вс. */
+        WeekSlots: {
+            /**
+             * Format: date
+             * @description Понедельник недели (YYYY-MM-DD)
+             */
+            weekStart: string;
+            /** @description Дни недели, пн–вс */
+            days: components["schemas"]["DaySlots"][];
         };
     };
     responses: never;
@@ -191,6 +251,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingType"];
+                };
+            };
+        };
+    };
+    listSlots: {
+        parameters: {
+            query: {
+                /** @description Любая дата недели (YYYY-MM-DD) */
+                date: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request has succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeekSlots"];
                 };
             };
         };

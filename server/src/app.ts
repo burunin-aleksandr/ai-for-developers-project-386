@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { loadContractSchemas } from "./contract";
 import { MeetingTypeStore } from "./meeting-types-store";
+import { isValidDate, weekSlots } from "./slots";
 
 export function buildApp(): FastifyInstance {
   const app = Fastify();
@@ -15,6 +16,36 @@ export function buildApp(): FastifyInstance {
       },
     },
     async () => ({ status: "ok" }),
+  );
+
+  app.get(
+    "/slots",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          properties: { date: { type: "string" } },
+          required: ["date"],
+        },
+        response: {
+          200: schemas.WeekSlots,
+          400: {
+            type: "object",
+            properties: { message: { type: "string" } },
+            required: ["message"],
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { date } = req.query as { date?: unknown };
+      if (!isValidDate(date)) {
+        return reply
+          .code(400)
+          .send({ message: "Некорректная дата: ожидается YYYY-MM-DD" });
+      }
+      return reply.send(weekSlots(date));
+    },
   );
 
   app.get(

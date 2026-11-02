@@ -77,3 +77,49 @@ model MeetingTypeInput {
   @doc("Длительность в минутах (пресет)")
   durationMinutes: DurationMinutes;
 }
+
+/** Статус слота для гостя. */
+alias SlotStatus = "free" | "busy";
+
+/** Слот недели. Время хранится в UTC; отображение — UTC+3. */
+model Slot {
+  @doc("Начало слота (UTC)")
+  start: utcDateTime;
+
+  @doc("Конец слота (UTC)")
+  end: utcDateTime;
+
+  @doc("Статус: free — свободно, busy — занято")
+  status: SlotStatus;
+}
+
+/** Один день недели со слотами. */
+model DaySlots {
+  @doc("Дата дня (YYYY-MM-DD)")
+  date: plainDate;
+
+  @doc("Сколько слотов свободно в дне")
+  freeCount: int32;
+
+  @doc("Слоты дня (в UTC), прошедшее время скрыто")
+  slots: Slot[];
+}
+
+/** Неделя бронирования: пн–вс. */
+model WeekSlots {
+  @doc("Понедельник недели (YYYY-MM-DD)")
+  weekStart: plainDate;
+
+  @doc("Дни недели, пн–вс")
+  days: DaySlots[];
+}
+
+@get
+@route("/slots")
+@doc("Слоты недели для гостя. Считаются на лету для даты, попадающей в нужную неделю.")
+op listSlots(
+  @doc("Любая дата недели (YYYY-MM-DD)")
+  @query date: plainDate,
+): {
+  @body body: WeekSlots;
+};

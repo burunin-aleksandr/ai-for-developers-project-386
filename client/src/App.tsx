@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import type { components } from "./api/schema";
+import { fmtDate, fmtTime, plusDays, todayInDisplayZone } from "./dates";
 
 type MeetingType = components["schemas"]["MeetingType"];
 type MeetingTypeInput = components["schemas"]["MeetingTypeInput"];
+type WeekSlots = components["schemas"]["WeekSlots"];
+type Slot = components["schemas"]["Slot"];
 
 const DURATIONS = [15, 30, 45, 60] as const;
 
@@ -13,12 +16,21 @@ const EMPTY_FORM: MeetingTypeInput = {
 
 type View = "booking" | "admin";
 
+const STATUS_LABELS: Record<Slot["status"], string> = {
+  free: "Свободно",
+  busy: "Занято",
+};
+
 export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   const [view, setView] = useState<View>("booking");
   const [meetingTypes, setMeetingTypes] = useState<MeetingType[]>([]);
   const [editing, setEditing] = useState<MeetingType | "new" | null>(null);
   const [form, setForm] = useState<MeetingTypeInput>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<MeetingType | null>(null);
+  const [weekDate, setWeekDate] = useState<string>(todayInDisplayZone);
+  const [week, setWeek] = useState<WeekSlots | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +52,37 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     const data = (await res.json()) as { meetingTypes: MeetingType[] };
     return data.meetingTypes;
   }
+
+  /** Слоты недели считаются на лету при смене недели. День открыт по умолчанию — первый с слотами. */
+  useEffect(() => {
+    if (!selectedType) {
+      setWeek(null);
+      setSelectedDay(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${baseUrl}/slots?date=${weekDate}`)
+      .then((res) => res.json())
+      .then((data: WeekSlots) => {
+        if (cancelled) return;
+        setWeek(data);
+        setSelectedDay(
+          (prev) =>
+            (prev && data.days.some((d) => d.date === prev)
+              ? prev
+              : (data.days.find((d) => d.slots.length > 0)?.date ??
+                data.days[0]?.date ??
+                null)) ?? null,
+        );
+      })
+      .catch((err) => {
+        if (!cancelled) console.error(err);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType, weekDate]);
 
   async function save() {
     if (!editing) return;
@@ -95,6 +138,65 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
         <section aria-label="Записаться">
           {meetingTypes.length === 0 ? (
             <p>Типы встреч не созданы</p>
+          ) : selectedType ? (
+            <div>
+              <h2>{selectedType.name}</h2>
+              <button type="button" onClick={() => setSelectedType(null)}>
+                К списку типов
+              </button>
+
+              <nav aria-label="Неделя">
+                <button
+                  type="button"
+                  onClick={() => setWeekDate((d) => plusDays(d, -7))}
+                >
+                  ←
+                </button>
+                <span>
+                  {week
+                    ? `${fmtDate(week.weekStart)} — ${fmtDate(
+                        plusDays(week.weekStart, 6),
+                      )}`
+                    : "Загрузка…"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWeekDate((d) => plusDays(d, 7))}
+                >
+                  →
+                </button>
+              </nav>
+
+              {week && (
+                <ul aria-label="Дни недели">
+                  {week.days.map((day) => (
+                    <li key={day.date}>
+                      <button
+                        type="button"
+                        aria-pressed={selectedDay === day.date}
+                        onClick={() => setSelectedDay(day.date)}
+                      >
+                        <span>{fmtDate(day.date)}</span>
+                        <span>Свободно: {day.freeCount}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {week && selectedDay && (
+                <ul aria-label="Слоты">
+                  {week.days
+                    .find((d) => d.date === selectedDay)
+                    ?.slots.map((slot) => (
+                      <li key={slot.start}>
+                        <span>{fmtTime(slot.start)}</span>
+                        <span>{STATUS_LABELS[slot.status]}</span>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
           ) : (
             <ul>
               {meetingTypes.map((t) => (
@@ -102,6 +204,12 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                   <h2>{t.name}</h2>
                   {t.description && <p>{t.description}</p>}
                   <span>{t.durationMinutes} мин</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedType(t)}
+                  >
+                    Выбрать
+                  </button>
                 </li>
               ))}
             </ul>
