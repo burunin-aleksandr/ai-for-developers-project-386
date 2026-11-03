@@ -44,7 +44,18 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   );
   const [eventError, setEventError] = useState<string | null>(null);
   // бамп при изменении событий — чтобы календарь гостя перезапросился
-  const [eventsVersion, setEventsVersion] = useState(0);
+  const [slotsRevision, setSlotsRevision] = useState(0);
+  // двухшаговое бронирование: слот → форма → успех
+  const [bookingStep, setBookingStep] = useState<
+    "idle" | "form" | "success"
+  >("idle");
+  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  const [bookingForm, setBookingForm] = useState({
+    name: "",
+    email: "",
+    comment: "",
+  });
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,7 +122,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, weekDate, eventsVersion]);
+  }, [selectedType, weekDate, slotsRevision]);
 
   async function save() {
     if (!editing) return;
@@ -169,7 +180,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     setEventForm(null);
     setEventError(null);
     setAdminEvents(await loadEvents());
-    setEventsVersion((v) => v + 1);
+    setSlotsRevision((v) => v + 1);
   }
 
   async function deleteEvent(id: number) {
@@ -178,7 +189,46 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     });
     if (!res.ok) return;
     setAdminEvents(await loadEvents());
-    setEventsVersion((v) => v + 1);
+    setSlotsRevision((v) => v + 1);
+  }
+
+  async function submitBooking() {
+    if (!selectedSlot || !selectedType) return;
+    if (!bookingForm.name.trim() || !bookingForm.email.trim()) {
+      setBookingError("Заполните имя и email");
+      return;
+    }
+
+    const res = await fetch(`${baseUrl}/bookings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slotStart: selectedSlot.start,
+        durationMinutes: selectedType.durationMinutes,
+        name: bookingForm.name,
+        email: bookingForm.email,
+        ...(bookingForm.comment ? { comment: bookingForm.comment } : {}),
+      }),
+    });
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      setBookingError(body?.message ?? `Ошибка записи (${res.status})`);
+      return;
+    }
+
+    setBookingError(null);
+    setBookingStep("success");
+    setSlotsRevision((v) => v + 1);
+  }
+
+  function resetBooking() {
+    setBookingStep("idle");
+    setSelectedSlot(null);
+    setBookingError(null);
+    setBookingForm({ name: "", email: "", comment: "" });
   }
 
   return (
@@ -259,11 +309,111 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                     .find((d) => d.date === selectedDay)
                     ?.slots.map((slot) => (
                       <li key={slot.start}>
-                        <span>{fmtTime(slot.start)}</span>
-                        <span>{STATUS_LABELS[slot.status]}</span>
+                        <button
+                          type="button"
+                          disabled={slot.status === "busy"}
+                          aria-pressed={selectedSlot?.start === slot.start}
+                          onClick={() => {
+                            setSelectedSlot(slot);
+                            setBookingStep("idle");
+                            setBookingError(null);
+                          }}
+                        >
+                          <span>{fmtTime(slot.start)}</span>
+                          <span>{STATUS_LABELS[slot.status]}</span>
+                        </button>
                       </li>
                     ))}
                 </ul>
+              )}
+
+              {selectedSlot && bookingStep === "idle" && (
+                <section aria-label="Выбранный слот">
+                  <p>
+                    <span>Выбранная дата</span>{" "}
+                    <strong>{fmtDate(selectedSlot.start.slice(0, 10))}</strong>
+                  </p>
+                  <p>
+                    <span>Выбранное время</span>{" "}
+                    <strong>{fmtTime(selectedSlot.start)}</strong>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setBookingStep("form")}
+                  >
+                    Продолжить
+                  </button>
+                </section>
+              )}
+
+              {selectedSlot && bookingStep === "form" && (
+                <form
+                  aria-label="Форма записи"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void submitBooking();
+                  }}
+                >
+                  <label>
+                    Имя
+                    <input
+                      value={bookingForm.name}
+                      onChange={(e) =>
+                        setBookingForm((f) => ({ ...f, name: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={bookingForm.email}
+                      onChange={(e) =>
+                        setBookingForm((f) => ({
+                          ...f,
+                          email: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Комментарий
+                    <input
+                      value={bookingForm.comment}
+                      onChange={(e) =>
+                        setBookingForm((f) => ({
+                          ...f,
+                          comment: e.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <button type="submit">Записаться</button>
+                  {bookingError && <p role="alert">{bookingError}</p>}
+                </form>
+              )}
+
+              {bookingStep === "success" && selectedSlot && (
+                <section aria-label="Успех">
+                  <p>Вы записаны</p>
+                  <p>
+                    Тип: <strong>{selectedType.name}</strong>
+                  </p>
+                  <p>
+                    Дата:{" "}
+                    <strong>{fmtDate(selectedSlot.start.slice(0, 10))}</strong>
+                  </p>
+                  <p>
+                    Время: <strong>{fmtTime(selectedSlot.start)}</strong>
+                  </p>
+                  <p>
+                    Длительность:{" "}
+                    <strong>{selectedType.durationMinutes} мин</strong>
+                  </p>
+                  <button type="button" onClick={resetBooking}>
+                    К календарю
+                  </button>
+                </section>
               )}
             </div>
           ) : (

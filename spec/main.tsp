@@ -102,6 +102,42 @@ model AdminEventInput {
   end: utcDateTime;
 }
 
+/** Запись гостя на слот. Письма не отправляются. */
+model Booking {
+  @doc("Идентификатор записи")
+  id: int64;
+
+  @doc("Начало слота (UTC)")
+  slotStart: utcDateTime;
+
+  @doc("Имя гостя")
+  name: string;
+
+  @doc("Email гостя")
+  email: string;
+
+  @doc("Комментарий гостя")
+  comment?: string;
+}
+
+/** Входные данные записи (валидируются на сервере). */
+model BookingInput {
+  @doc("Начало слота (UTC) — бронируется только целый слот")
+  slotStart: utcDateTime;
+
+  @doc("Длительность выбранного типа встречи — по ней нарезан сет, который видел гость")
+  durationMinutes: DurationMinutes;
+
+  @doc("Имя гостя (обязательно)")
+  name: string;
+
+  @doc("Email гостя (обязательно)")
+  email: string;
+
+  @doc("Комментарий гостя (необязательно)")
+  comment?: string;
+}
+
 /** Слот недели. Время хранится в UTC; отображение — UTC+3. */
 model Slot {
   @doc("Начало слота (UTC)")
@@ -173,4 +209,14 @@ op deleteAdminEvent(
   @path id: int64,
 ): {
   @statusCode _: 204;
+};
+
+@post
+@route("/bookings")
+@doc("Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей.")
+op createBooking(
+  @body body: BookingInput,
+): {
+  @statusCode _: 201;
+  @body body: Booking;
 };

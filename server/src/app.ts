@@ -1,8 +1,14 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { loadContractSchemas } from "./contract";
 import { AdminEventStore } from "./admin-events-store";
+import { BookingStore } from "./bookings-store";
 import { MeetingTypeStore } from "./meeting-types-store";
-import { isWithinBookingWindow, isValidDate, weekSlots } from "./slots";
+import {
+  isExistingSlotStart,
+  isWithinBookingWindow,
+  isValidDate,
+  weekSlots,
+} from "./slots";
 
 const ERROR_BODY = {
   type: "object",
@@ -15,6 +21,7 @@ export function buildApp(): FastifyInstance {
   const schemas = loadContractSchemas();
   const meetingTypes = new MeetingTypeStore();
   const adminEvents = new AdminEventStore();
+  const bookings = new BookingStore();
 
   app.get(
     "/health",
@@ -59,8 +66,60 @@ export function buildApp(): FastifyInstance {
         weekSlots(date, {
           events: adminEvents.list(),
           durationMinutes,
+          busyStarts: bookings.busyStarts(),
         }),
       );
+    },
+  );
+
+  app.post(
+    "/bookings",
+    {
+      schema: {
+        body: schemas.BookingInput,
+        response: { 201: schemas.Booking, 400: ERROR_BODY },
+      },
+    },
+    async (req, reply) => {
+      const { slotStart, durationMinutes, name, email, comment } =
+        req.body as {
+          slotStart: string;
+          durationMinutes: number;
+          name: string;
+          email: string;
+          comment?: string;
+        };
+
+      if (!name.trim() || !email.trim()) {
+        return reply
+          .code(400)
+          .send({ message: "Имя и email обязательны" });
+      }
+
+      // бронируется только целый слот из сета, который видел гость
+      // (сет гостя нарезан длительностью его типа встречи)
+      if (
+        !isExistingSlotStart(
+          slotStart,
+          adminEvents.list(),
+          durationMinutes,
+        )
+      ) {
+        return reply
+          .code(400)
+          .send({ message: "Слот не существует или уже в прошлом" });
+      }
+
+      return reply
+        .code(201)
+        .send(
+          bookings.create({
+            slotStart,
+            name: name.trim(),
+            email: email.trim(),
+            ...(comment ? { comment } : {}),
+          }),
+        );
     },
   );
 

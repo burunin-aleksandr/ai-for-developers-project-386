@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createServer, type Server } from "node:http";
@@ -24,6 +24,14 @@ beforeEach(async () => {
     end: string;
   }> = [];
   let nextEventId = 1;
+  let bookings: Array<{
+    id: number;
+    slotStart: string;
+    name: string;
+    email: string;
+    comment?: string;
+  }> = [];
+  let nextBookingId = 1;
 
   server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -71,6 +79,11 @@ beforeEach(async () => {
             status: i === 0 && j === 0 ? "busy" : "free",
           }));
         }
+        // забронированные слоты «Занято» для всех гостей
+        const busy = new Set(bookings.map((b) => b.slotStart));
+        slots = slots.map((s) =>
+          busy.has(s.start) ? { ...s, status: "busy" } : s,
+        );
         return {
           date: dateStr,
           freeCount: slots.filter((s) => s.status === "free").length,
@@ -81,6 +94,20 @@ beforeEach(async () => {
     }
     if (req.method === "GET" && url.pathname === "/admin-events") {
       return send(200, { adminEvents: events });
+    }
+    if (req.method === "POST" && url.pathname === "/bookings") {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => {
+        const body = JSON.parse(raw);
+        if (!body.name?.trim() || !body.email?.trim()) {
+          return send(400, { message: "Имя и email обязательны" });
+        }
+        const created = { id: nextBookingId++, ...body };
+        bookings.push(created);
+        send(201, created);
+      });
+      return;
     }
     if (req.method === "POST" && url.pathname === "/admin-events") {
       let raw = "";
@@ -445,5 +472,124 @@ describe("страницы: события админа", () => {
     );
     expect(await screen.findByText("11:15")).toBeInTheDocument(); // шаг 15 минут (сетка вернулась)
     expect(screen.queryByText("10:30")).toBeNull();
+  });
+});
+
+
+describe("страницы: бронирование", () => {
+  /** Список слотов выбранного дня (страница календаря). */
+  function slotsList() {
+    return screen.getByRole("list", { name: "Слоты" });
+  }
+
+  /** Рендерит календарь и выбирает первый свободный слот (панель выбора открыта). */
+  async function selectFreeSlot() {
+    render(<App baseUrl={baseUrl} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+    const list = await screen.findByRole("list", { name: "Слоты" });
+    const free = within(list).getAllByRole("button", {
+      name: /Свободно/,
+    })[0];
+    await userEvent.click(free);
+    await screen.findByText("Выбранная дата");
+    return free;
+  }
+
+  /** Проходит поток до формы бронирования. */
+  async function openBookingForm() {
+    const free = await selectFreeSlot();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Продолжить" }),
+    );
+    await screen.findByLabelText("Имя");
+    return free;
+  }
+
+  test("полный поток: слот → «Продолжить» → форма → «Записаться» → сводка", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча 30 минут", durationMinutes: 30 }),
+    });
+
+    await selectFreeSlot();
+
+    // панель выбора
+    expect(screen.getByText("Выбранная дата")).toBeInTheDocument();
+    expect(screen.getByText("Выбранное время")).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Продолжить" }),
+    );
+    await userEvent.type(screen.getByLabelText("Имя"), "Иван Петров");
+    await userEvent.type(
+      screen.getByLabelText("Email"),
+      "ivan@example.com",
+    );
+    await userEvent.type(
+      screen.getByLabelText("Комментарий"),
+      "Позвоните позже",
+    );
+    await userEvent.click(within(screen.getByRole("form", { name: "Форма записи" })).getByRole("button", { name: "Записаться" }));
+
+    // сводка успеха: тип, дата, время, длительность (имя/email в сводку не входят)
+    expect(await screen.findByText("Вы записаны")).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText("Встреча 30 минут")).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByRole("form", { name: "Форма записи" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
+  });
+
+  test("имя и email обязательны — форма показывает ошибку", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
+    });
+
+    await openBookingForm();
+
+    await userEvent.click(within(screen.getByRole("form", { name: "Форма записи" })).getByRole("button", { name: "Записаться" }));
+    expect(
+      await screen.findByText("Заполните имя и email"),
+    ).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Имя"), "Иван");
+    await userEvent.type(screen.getByLabelText("Email"), "ivan@example.com");
+    await userEvent.click(within(screen.getByRole("form", { name: "Форма записи" })).getByRole("button", { name: "Записаться" }));
+    expect(await screen.findByText("Вы записаны")).toBeInTheDocument();
+  });
+
+  test("забронированный слот становится «Занято» после брони", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
+    });
+
+    const free = await openBookingForm();
+    const freeText = free.textContent;
+
+    await userEvent.type(screen.getByLabelText("Имя"), "Иван");
+    await userEvent.type(screen.getByLabelText("Email"), "ivan@example.com");
+    await userEvent.click(within(screen.getByRole("form", { name: "Форма записи" })).getByRole("button", { name: "Записаться" }));
+    await screen.findByText("Вы записаны");
+
+    // возврат к календарю: тот же слот теперь «Занято»
+    await userEvent.click(
+      screen.getByRole("button", { name: "К календарю" }),
+    );
+    await waitFor(() => {
+      // тот же слот (по времени) теперь отображается «Занято»
+      const time = freeText!.match(/\d{2}:\d{2}/)![0];
+      const busy = within(slotsList())
+        .queryAllByRole("button", { name: new RegExp(time) })
+        .filter((b) => /Занято/.test(b.textContent ?? ""));
+      expect(busy.length).toBeGreaterThan(0);
+    });
+    expect(freeText).toContain("Свободно"); // до брони был свободен
   });
 });

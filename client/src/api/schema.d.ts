@@ -39,6 +39,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/bookings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей. */
+        post: operations["createBooking"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -142,6 +159,44 @@ export interface components {
              * @description Конец события (UTC)
              */
             end: string;
+        };
+        /** @description Запись гостя на слот. Письма не отправляются. */
+        Booking: {
+            /**
+             * Format: int64
+             * @description Идентификатор записи
+             */
+            id: number;
+            /**
+             * Format: date-time
+             * @description Начало слота (UTC)
+             */
+            slotStart: string;
+            /** @description Имя гостя */
+            name: string;
+            /** @description Email гостя */
+            email: string;
+            /** @description Комментарий гостя */
+            comment?: string;
+        };
+        /** @description Входные данные записи (валидируются на сервере). */
+        BookingInput: {
+            /**
+             * Format: date-time
+             * @description Начало слота (UTC) — бронируется только целый слот
+             */
+            slotStart: string;
+            /**
+             * @description Длительность выбранного типа встречи — по ней нарезан сет, который видел гость
+             * @enum {number}
+             */
+            durationMinutes: 15 | 30 | 45 | 60;
+            /** @description Имя гостя (обязательно) */
+            name: string;
+            /** @description Email гостя (обязательно) */
+            email: string;
+            /** @description Комментарий гостя (необязательно) */
+            comment?: string;
         };
         /** @description Один день недели со слотами. */
         DaySlots: {
@@ -292,6 +347,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    createBooking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BookingInput"];
+            };
+        };
+        responses: {
+            /** @description The request has succeeded and a new resource has been created as a result. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Booking"];
+                };
             };
         };
     };

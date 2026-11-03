@@ -84,6 +84,8 @@ type WeekSlotsOptions = {
   events?: TimeRange[];
   /** Шаг нарезки событий (длительность выбранного типа встречи). */
   durationMinutes?: number;
+  /** Начало забронированных слотов (UTC ISO) — они получают статус busy. */
+  busyStarts?: Set<string>;
   /** Текущий момент (для тестов). */
   now?: Date;
 };
@@ -96,11 +98,19 @@ type WeekSlotsOptions = {
  */
 export function weekSlots(
   date: string,
-  { events, durationMinutes, now = new Date() }: WeekSlotsOptions = {},
+  {
+    events,
+    durationMinutes,
+    busyStarts,
+    now = new Date(),
+  }: WeekSlotsOptions = {},
 ): WeekSlots {
   const weekStart = mondayOf(date);
   const days: DaySlots[] = [];
   const step = durationMinutes ?? SLOT_STEP_MINUTES;
+
+  const statusOf = (startIso: string): Slot["status"] =>
+    busyStarts?.has(startIso) ? "busy" : "free";
 
   for (let i = 0; i < 7; i++) {
     const day = new Date(weekStart);
@@ -130,7 +140,7 @@ export function weekSlots(
           slots.push({
             start: start.toISOString(),
             end: end.toISOString(),
-            status: "free",
+            status: statusOf(start.toISOString()),
           });
         }
       }
@@ -151,14 +161,14 @@ export function weekSlots(
         slots.push({
           start: start.toISOString(),
           end: end.toISOString(),
-          status: "free",
+          status: statusOf(start.toISOString()),
         });
       }
     }
 
     days.push({
       date: dateStr,
-      freeCount: slots.length,
+      freeCount: slots.filter((s) => s.status === "free").length,
       slots,
     });
   }
@@ -171,4 +181,22 @@ export function isValidDate(value: unknown): value is string {
   if (typeof value !== "string" || !DATE_RE.test(value)) return false;
   const d = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(d.getTime()) && formatDate(d) === value;
+}
+
+/**
+ * Существует ли слот с таким началом в указанной неделе
+ * (с учётом событий админа) — бронируется только целый слот.
+ */
+export function isExistingSlotStart(
+  slotStartIso: string,
+  events: TimeRange[],
+  durationMinutes?: number,
+): boolean {
+  const start = new Date(slotStartIso);
+  if (Number.isNaN(start.getTime())) return false;
+
+  const week = weekSlots(formatDate(start), { events, durationMinutes });
+  return week.days.some((day) =>
+    day.slots.some((slot) => slot.start === start.toISOString()),
+  );
 }
