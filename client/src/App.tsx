@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import type { components } from "./api/schema";
-import { fmtDate, fmtTime, plusDays, todayInDisplayZone } from "./dates";
+import {
+  DISPLAY_UTC_OFFSET_HOURS,
+  fmtDate,
+  fmtTime,
+  plusDays,
+  todayInDisplayZone,
+} from "./dates";
 
 type MeetingType = components["schemas"]["MeetingType"];
 type MeetingTypeInput = components["schemas"]["MeetingTypeInput"];
 type WeekSlots = components["schemas"]["WeekSlots"];
 type Slot = components["schemas"]["Slot"];
+type AdminEvent = components["schemas"]["AdminEvent"];
 
 const DURATIONS = [15, 30, 45, 60] as const;
 
@@ -31,12 +38,26 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   const [weekDate, setWeekDate] = useState<string>(todayInDisplayZone);
   const [week, setWeek] = useState<WeekSlots | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [adminEvents, setAdminEvents] = useState<AdminEvent[]>([]);
+  const [eventForm, setEventForm] = useState<{ start: string; end: string } | null>(
+    null,
+  );
+  const [eventError, setEventError] = useState<string | null>(null);
+  // бамп при изменении событий — чтобы календарь гостя перезапросился
+  const [eventsVersion, setEventsVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     void load()
       .then((data) => {
         if (!cancelled) setMeetingTypes(data);
+      })
+      .catch((err) => {
+        if (!cancelled) console.error(err);
+      });
+    void loadEvents()
+      .then((data) => {
+        if (!cancelled) setAdminEvents(data);
       })
       .catch((err) => {
         if (!cancelled) console.error(err);
@@ -53,6 +74,12 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     return data.meetingTypes;
   }
 
+  async function loadEvents(): Promise<AdminEvent[]> {
+    const res = await fetch(`${baseUrl}/admin-events`);
+    const data = (await res.json()) as { adminEvents: AdminEvent[] };
+    return data.adminEvents;
+  }
+
   /** Слоты недели считаются на лету при смене недели. День открыт по умолчанию — первый с слотами. */
   useEffect(() => {
     if (!selectedType) {
@@ -61,7 +88,9 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       return;
     }
     let cancelled = false;
-    fetch(`${baseUrl}/slots?date=${weekDate}`)
+    fetch(
+      `${baseUrl}/slots?date=${weekDate}&durationMinutes=${selectedType.durationMinutes}`,
+    )
       .then((res) => res.json())
       .then((data: WeekSlots) => {
         if (cancelled) return;
@@ -82,7 +111,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, weekDate]);
+  }, [selectedType, weekDate, eventsVersion]);
 
   async function save() {
     if (!editing) return;
@@ -110,6 +139,46 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     setFormError(null);
     setForm(EMPTY_FORM);
     setMeetingTypes(await load());
+  }
+
+  /** datetime-local значение (UTC+3) → UTC ISO для API. */
+  function toUtcIso(localValue: string): string {
+    const offset = String(DISPLAY_UTC_OFFSET_HOURS).padStart(2, "0");
+    return new Date(`${localValue}:00+${offset}:00`).toISOString();
+  }
+
+  async function saveEvent() {
+    if (!eventForm) return;
+    const res = await fetch(`${baseUrl}/admin-events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        start: toUtcIso(eventForm.start),
+        end: toUtcIso(eventForm.end),
+      }),
+    });
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      setEventError(body?.message ?? `Ошибка сохранения (${res.status})`);
+      return;
+    }
+
+    setEventForm(null);
+    setEventError(null);
+    setAdminEvents(await loadEvents());
+    setEventsVersion((v) => v + 1);
+  }
+
+  async function deleteEvent(id: number) {
+    const res = await fetch(`${baseUrl}/admin-events/${id}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) return;
+    setAdminEvents(await loadEvents());
+    setEventsVersion((v) => v + 1);
   }
 
   return (
@@ -303,6 +372,66 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
               </label>
               <button type="submit">Сохранить</button>
               {formError && <p role="alert">{formError}</p>}
+            </form>
+          )}
+
+          <h3>События админа</h3>
+          <button
+            type="button"
+            onClick={() => {
+              setEventForm({ start: "", end: "" });
+              setEventError(null);
+            }}
+          >
+            Создать событие
+          </button>
+
+          <ul>
+            {adminEvents.map((e) => (
+              <li key={e.id}>
+                <span>
+                  {fmtTime(e.start)} — {fmtTime(e.end)}
+                </span>
+                <button type="button" onClick={() => void deleteEvent(e.id)}>
+                  Удалить
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          {eventForm && (
+            <form
+              onSubmit={(ev) => {
+                ev.preventDefault();
+                void saveEvent();
+              }}
+            >
+              <label>
+                Начало
+                <input
+                  type="datetime-local"
+                  value={eventForm.start}
+                  onChange={(ev) =>
+                    setEventForm((f) =>
+                      f ? { ...f, start: ev.target.value } : f,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Конец
+                <input
+                  type="datetime-local"
+                  value={eventForm.end}
+                  onChange={(ev) =>
+                    setEventForm((f) =>
+                      f ? { ...f, end: ev.target.value } : f,
+                    )
+                  }
+                />
+              </label>
+              <button type="submit">Сохранить</button>
+              {eventError && <p role="alert">{eventError}</p>}
             </form>
           )}
         </section>

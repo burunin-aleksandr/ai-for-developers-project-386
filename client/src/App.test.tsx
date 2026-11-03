@@ -18,6 +18,12 @@ beforeEach(async () => {
     durationMinutes: number;
   }> = [];
   let nextId = 1;
+  let events: Array<{
+    id: number;
+    start: string;
+    end: string;
+  }> = [];
+  let nextEventId = 1;
 
   server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -31,17 +37,40 @@ beforeEach(async () => {
       const d = new Date(`${date}T00:00:00.000Z`);
       const offset = (d.getUTCDay() + 6) % 7;
       d.setUTCDate(d.getUTCDate() - offset);
+      const duration = Number(url.searchParams.get("durationMinutes") ?? 15);
       const days = Array.from({ length: 7 }, (_, i) => {
         const day = new Date(d);
         day.setUTCDate(d.getUTCDate() + i);
         const dateStr = day.toISOString().slice(0, 10);
-        // первый слот дня сдвигается на час с индексом дня — дни различимы во времени
-        const hour = String(7 + i).padStart(2, "0");
-        const slots = [0, 1, 2].map((j) => ({
-          start: `${dateStr}T${hour}:${String(j * 15).padStart(2, "0")}:00.000Z`,
-          end: `${dateStr}T${hour}:${String(j * 15 + 15).padStart(2, "0")}:00.000Z`,
-          status: i === 0 && j === 0 ? "busy" : "free",
-        }));
+        let slots: Array<{ start: string; end: string; status: string }>;
+        if (events.length > 0) {
+          // слоты только из событий админа, нарезка с шагом durationMinutes
+          slots = events
+            .filter((e) => e.start.slice(0, 10) === dateStr)
+            .flatMap((e) => {
+              const out = [];
+              for (
+                let t = Date.parse(e.start);
+                t + duration * 60_000 <= Date.parse(e.end);
+                t += duration * 60_000
+              ) {
+                out.push({
+                  start: new Date(t).toISOString(),
+                  end: new Date(t + duration * 60_000).toISOString(),
+                  status: "free",
+                });
+              }
+              return out;
+            });
+        } else {
+          // дефолтная сетка: первый слот сдвигается на час с индексом дня
+          const hour = String(7 + i).padStart(2, "0");
+          slots = [0, 1, 2].map((j) => ({
+            start: `${dateStr}T${hour}:${String(j * 15).padStart(2, "0")}:00.000Z`,
+            end: `${dateStr}T${hour}:${String(j * 15 + 15).padStart(2, "0")}:00.000Z`,
+            status: i === 0 && j === 0 ? "busy" : "free",
+          }));
+        }
         return {
           date: dateStr,
           freeCount: slots.filter((s) => s.status === "free").length,
@@ -49,6 +78,27 @@ beforeEach(async () => {
         };
       });
       return send(200, { weekStart: days[0].date, days });
+    }
+    if (req.method === "GET" && url.pathname === "/admin-events") {
+      return send(200, { adminEvents: events });
+    }
+    if (req.method === "POST" && url.pathname === "/admin-events") {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => {
+        const body = JSON.parse(raw);
+        const created = { id: nextEventId++, ...body };
+        events.push(created);
+        send(201, created);
+      });
+      return;
+    }
+    if (req.method === "DELETE" && url.pathname.startsWith("/admin-events/")) {
+      const id = Number(url.pathname.split("/")[2]);
+      const before = events.length;
+      events = events.filter((e) => e.id !== id);
+      if (events.length === before) return send(404, { message: "not found" });
+      return send(204, null);
     }
     if (req.method === "GET" && url.pathname === "/meeting-types") {
       return send(200, { meetingTypes: types });
@@ -282,5 +332,118 @@ describe("страницы: недельный календарь", () => {
 
     expect(await screen.findByText("11:00")).toBeInTheDocument();
     expect(screen.queryByText("10:00")).toBeNull();
+  });
+});
+
+describe("страницы: события админа", () => {
+  test("админ создаёт событие и видит его в списке", async () => {
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Админка" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Создать событие" }),
+    );
+    await userEvent.type(screen.getByLabelText("Начало"), "2026-11-10T10:00");
+    await userEvent.type(screen.getByLabelText("Конец"), "2026-11-10T11:00");
+    await userEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    expect(
+      await screen.findByText("10:00 — 11:00"),
+    ).toBeInTheDocument();
+  });
+
+  test("админ удаляет событие — список становится пустым", async () => {
+    await fetch(`${baseUrl}/admin-events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        start: "2026-11-10T07:00:00.000Z",
+        end: "2026-11-10T08:00:00.000Z",
+      }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Админка" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Удалить" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("10:00 — 11:00")).toBeNull();
+    });
+  });
+
+  test("гость видит только слоты из событий админа", async () => {
+    // событие во вторник текущей недели: 07:00–08:00 UTC = 10:00–11:00 UTC+3
+    const tuesday = plusDays(weekStartOf(todayInDisplayZone()), 1);
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 30 }),
+    });
+    await fetch(`${baseUrl}/admin-events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        start: `${tuesday}T07:00:00.000Z`,
+        end: `${tuesday}T08:00:00.000Z`,
+      }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+
+    // событие 10:00–11:00 UTC+3, нарезка 30 минут → 10:00 и 10:30
+    expect(await screen.findByText("10:00")).toBeInTheDocument();
+    expect(screen.getByText("10:30")).toBeInTheDocument();
+    expect(screen.queryByText("10:15")).toBeNull(); // дефолтная сетка не строится
+    expect(screen.queryByText("11:00")).toBeNull(); // за пределами события
+  });
+
+  test("после удаления всех событий гость снова видит дефолтную сетку", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 30 }),
+    });
+    const tuesday = plusDays(weekStartOf(todayInDisplayZone()), 1);
+    await fetch(`${baseUrl}/admin-events`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        start: `${tuesday}T07:00:00.000Z`,
+        end: `${tuesday}T08:00:00.000Z`,
+      }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+    // гость видит слоты события (10:00, 10:30), а не сетку
+    expect(await screen.findByText("10:30")).toBeInTheDocument();
+
+    // админ удаляет событие
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Админка" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Удалить" }),
+    );
+
+    // возвращаемся к гостю — без смены недели/типа видна дефолтная сетка
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Записаться" }),
+    );
+    expect(await screen.findByText("11:15")).toBeInTheDocument(); // шаг 15 минут (сетка вернулась)
+    expect(screen.queryByText("10:30")).toBeNull();
   });
 });

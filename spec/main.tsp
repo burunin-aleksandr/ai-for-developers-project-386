@@ -81,6 +81,27 @@ model MeetingTypeInput {
 /** Статус слота для гостя. */
 alias SlotStatus = "free" | "busy";
 
+/** Событие админа: интервал доступного времени поверх дефолтной сетки. */
+model AdminEvent {
+  @doc("Идентификатор события")
+  id: int64;
+
+  @doc("Начало события (UTC)")
+  start: utcDateTime;
+
+  @doc("Конец события (UTC)")
+  end: utcDateTime;
+}
+
+/** Входные данные события админа (интервал в пределах окна 10:00–18:00 UTC+3). */
+model AdminEventInput {
+  @doc("Начало события (UTC)")
+  start: utcDateTime;
+
+  @doc("Конец события (UTC)")
+  end: utcDateTime;
+}
+
 /** Слот недели. Время хранится в UTC; отображение — UTC+3. */
 model Slot {
   @doc("Начало слота (UTC)")
@@ -116,10 +137,40 @@ model WeekSlots {
 
 @get
 @route("/slots")
-@doc("Слоты недели для гостя. Считаются на лету для даты, попадающей в нужную неделю.")
+@doc("Слоты недели для гостя. Считаются на лету для даты, попадающей в нужную неделю. При наличии событий админа нарезаются ими с шагом durationMinutes.")
 op listSlots(
   @doc("Любая дата недели (YYYY-MM-DD)")
   @query date: plainDate,
+  @doc("Длительность выбранного типа встречи для нарезки событий админа; без параметра — 15")
+  @query durationMinutes?: DurationMinutes,
 ): {
   @body body: WeekSlots;
+};
+
+@get
+@route("/admin-events")
+@doc("Список событий админа.")
+op listAdminEvents(): {
+  @body body: {
+    adminEvents: AdminEvent[];
+  };
+};
+
+@post
+@route("/admin-events")
+@doc("Создать событие админа — интервал в пределах окна бронирования 10:00–18:00 UTC+3.")
+op createAdminEvent(
+  @body body: AdminEventInput,
+): {
+  @statusCode _: 201;
+  @body body: AdminEvent;
+};
+
+@delete
+@route("/admin-events/{id}")
+@doc("Удалить событие админа. Когда удалены все события, гость снова видит дефолтную сетку.")
+op deleteAdminEvent(
+  @path id: int64,
+): {
+  @statusCode _: 204;
 };
