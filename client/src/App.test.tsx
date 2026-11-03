@@ -27,6 +27,7 @@ beforeEach(async () => {
   let bookings: Array<{
     id: number;
     slotStart: string;
+    durationMinutes: number;
     name: string;
     email: string;
     comment?: string;
@@ -79,10 +80,18 @@ beforeEach(async () => {
             status: i === 0 && j === 0 ? "busy" : "free",
           }));
         }
-        // забронированные слоты «Занято» для всех гостей
-        const busy = new Set(bookings.map((b) => b.slotStart));
+        // забронированные интервалы «Занято» для всех гостей (по пересечению)
+        const busy = bookings.map((b) => {
+          const s = Date.parse(b.slotStart);
+          return { start: s, end: s + b.durationMinutes * 60_000 };
+        });
         slots = slots.map((s) =>
-          busy.has(s.start) ? { ...s, status: "busy" } : s,
+          busy.some(
+            (b) =>
+              Date.parse(s.start) < b.end && b.start < Date.parse(s.end),
+          )
+            ? { ...s, status: "busy" }
+            : s,
         );
         return {
           date: dateStr,
@@ -103,9 +112,29 @@ beforeEach(async () => {
         if (!body.name?.trim() || !body.email?.trim()) {
           return send(400, { message: "Имя и email обязательны" });
         }
+        // антидубль: пересечение интервалов → 409
+        const start = Date.parse(body.slotStart);
+        const end = start + (body.durationMinutes ?? 15) * 60_000;
+        const overlap = bookings.some((b) => {
+          const bStart = Date.parse(b.slotStart);
+          const bEnd = bStart + b.durationMinutes * 60_000;
+          return start < bEnd && bStart < end;
+        });
+        if (overlap) {
+          return send(409, {
+            message: "Слот уже занят — выберите другой",
+          });
+        }
         const created = { id: nextBookingId++, ...body };
         bookings.push(created);
-        send(201, created);
+        // контракт Booking не включает durationMinutes — отдаём только поля модели
+        send(201, {
+          id: created.id,
+          slotStart: created.slotStart,
+          name: created.name,
+          email: created.email,
+          ...(created.comment ? { comment: created.comment } : {}),
+        });
       });
       return;
     }
@@ -591,5 +620,65 @@ describe("страницы: бронирование", () => {
       expect(busy.length).toBeGreaterThan(0);
     });
     expect(freeText).toContain("Свободно"); // до брони был свободен
+  });
+
+  test("слот заняли между выбором и отправкой — сообщение и возврат к выбору", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
+    });
+
+    const monday = weekStartOf(todayInDisplayZone());
+    // первый свободный слот фейка — понедельник 07:15 UTC (10:15 UTC+3)
+    const raceStart = `${monday}T07:15:00.000Z`;
+
+    render(<App baseUrl={baseUrl} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+    const list = await screen.findByRole("list", { name: "Слоты" });
+    const free = within(list).getAllByRole("button", {
+      name: /Свободно/,
+    })[0];
+    expect(free).toHaveTextContent("10:15");
+    await userEvent.click(free);
+
+    // другой гость занимает слот, пока наш гость выбирает время
+    await fetch(`${baseUrl}/bookings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slotStart: raceStart,
+        durationMinutes: 15,
+        name: "Пётр",
+        email: "petr@example.com",
+      }),
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    await userEvent.type(screen.getByLabelText("Имя"), "Иван");
+    await userEvent.type(screen.getByLabelText("Email"), "ivan@example.com");
+    await userEvent.click(
+      within(screen.getByRole("form", { name: "Форма записи" })).getByRole(
+        "button",
+        { name: "Записаться" },
+      ),
+    );
+
+    // сообщение о занятости
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Слот уже занят/,
+    );
+    // форма закрыта, гость вернулся к выбору слота
+    expect(
+      screen.queryByRole("form", { name: "Форма записи" }),
+    ).toBeNull();
+    await screen.findByRole("list", { name: "Слоты" });
+    // сетка перерисована: тот слот теперь «Занято» и недоступен
+    const busySlot = within(
+      screen.getByRole("list", { name: "Слоты" }),
+    ).getByRole("button", { name: /10:15.*Занято/ });
+    expect(busySlot).toBeDisabled();
   });
 });

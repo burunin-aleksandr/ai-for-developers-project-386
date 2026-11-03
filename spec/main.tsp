@@ -211,12 +211,21 @@ op deleteAdminEvent(
   @statusCode _: 204;
 };
 
+/** Тело ответа об ошибке (например, конфликт занятости). */
+model ErrorBody {
+  @doc("Сообщение об ошибке")
+  message: string;
+}
+
 @post
 @route("/bookings")
-@doc("Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей.")
+@doc("Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей. Одно время нельзя занять дважды — конфликт → 409.")
 op createBooking(
   @body body: BookingInput,
 ): {
   @statusCode _: 201;
   @body body: Booking;
+} | {
+  @statusCode _: 409;
+  @body body: ErrorBody;
 };

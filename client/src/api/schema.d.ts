@@ -48,7 +48,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей. */
+        /** @description Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей. Одно время нельзя занять дважды — конфликт → 409. */
         post: operations["createBooking"];
         delete?: never;
         options?: never;
@@ -213,6 +213,11 @@ export interface components {
             /** @description Слоты дня (в UTC), прошедшее время скрыто */
             slots: components["schemas"]["Slot"][];
         };
+        /** @description Тело ответа об ошибке (например, конфликт занятости). */
+        ErrorBody: {
+            /** @description Сообщение об ошибке */
+            message: string;
+        };
         /** @description Ответ health-check сервиса. */
         HealthStatus: {
             /**
@@ -370,6 +375,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Booking"];
+                };
+            };
+            /** @description The request conflicts with the current state of the server. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
         };

@@ -169,4 +169,103 @@ describe("HTTP API seam: бронирование", () => {
     });
     expect(offered.statusCode).toBe(201);
   });
+
+  test("пересечение интервалов разной длительности → 409", async () => {
+    const monday = futureWeekMonday();
+    // гость бронирует 07:00–08:00 (тип 60 мин)
+    const first = await app.inject({
+      method: "POST",
+      url: "/bookings",
+      payload: {
+        slotStart: `${monday}T07:00:00.000Z`,
+        durationMinutes: 60,
+        name: "Иван",
+        email: "ivan@example.com",
+      },
+    });
+    expect(first.statusCode).toBe(201);
+
+    // другой гость с типом 15 мин берёт 07:30 — внутри занятого интервала
+    const second = await app.inject({
+      method: "POST",
+      url: "/bookings",
+      payload: {
+        slotStart: `${monday}T07:30:00.000Z`,
+        durationMinutes: 15,
+        name: "Пётр",
+        email: "petr@example.com",
+      },
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().message).toMatch(/занят/i);
+
+    // сетка уже показывает занятый интервал (07:00–08:00), а 08:00 свободен
+    const grid = await app.inject({
+      method: "GET",
+      url: `/slots?date=${monday}`,
+    });
+    const byStart = Object.fromEntries(
+      grid
+        .json()
+        .days[0].slots.map((s: { start: string; status: string }) => [
+          s.start,
+          s.status,
+        ]),
+    );
+    expect(byStart[`${monday}T07:00:00.000Z`]).toBe("busy");
+    expect(byStart[`${monday}T07:45:00.000Z`]).toBe("busy");
+    expect(byStart[`${monday}T08:00:00.000Z`]).toBe("free");
+
+    // непересекающийся интервал бронируется без проблем
+    const third = await app.inject({
+      method: "POST",
+      url: "/bookings",
+      payload: {
+        slotStart: `${monday}T08:00:00.000Z`,
+        durationMinutes: 15,
+        name: "Пётр",
+        email: "petr@example.com",
+      },
+    });
+    expect(third.statusCode).toBe(201);
+  });
+
+  test("гонка: слот заняли между выбором и отправкой → 409", async () => {
+    const monday = futureWeekMonday();
+    const payload = {
+      slotStart: `${monday}T07:00:00.000Z`,
+      durationMinutes: 15,
+      name: "Иван",
+      email: "ivan@example.com",
+    };
+
+    // оба гостя выбрали один и тот же слот
+    expect(
+      (await app.inject({ method: "POST", url: "/bookings", payload }))
+        .statusCode,
+    ).toBe(201);
+    const late = await app.inject({
+      method: "POST",
+      url: "/bookings",
+      payload: { ...payload, name: "Пётр", email: "petr@example.com" },
+    });
+    expect(late.statusCode).toBe(409);
+    expect(late.json().message).toMatch(/занят/i);
+
+    // слот остаётся «Занято», запись не задвоена
+    const slots = await app.inject({
+      method: "GET",
+      url: `/slots?date=${monday}`,
+    });
+    const booked = slots
+      .json()
+      .days.flatMap((d: { slots: Array<{ start: string; status: string }> }) =>
+        d.slots,
+      )
+      .filter(
+        (s: { start: string }) => s.start === payload.slotStart,
+      );
+    expect(booked).toHaveLength(1);
+    expect(booked[0].status).toBe("busy");
+  });
 });

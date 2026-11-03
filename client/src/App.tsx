@@ -215,6 +215,14 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       const body = (await res.json().catch(() => null)) as {
         message?: string;
       } | null;
+      // конфликт занятости: возвращаем гостя к выбору слота с сообщением
+      if (res.status === 409) {
+        setBookingError(body?.message ?? "Слот уже занят — выберите другой");
+        setBookingStep("idle");
+        setSelectedSlot(null);
+        setSlotsRevision((v) => v + 1); // перерисовать сетку: слот теперь занят
+        return;
+      }
       setBookingError(body?.message ?? `Ошибка записи (${res.status})`);
       return;
     }
@@ -325,6 +333,11 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                       </li>
                     ))}
                 </ul>
+              )}
+
+              {/* сообщение о занятости после 409 — гость снова выбирает слот */}
+              {bookingStep === "idle" && !selectedSlot && bookingError && (
+                <p role="alert">{bookingError}</p>
               )}
 
               {selectedSlot && bookingStep === "idle" && (

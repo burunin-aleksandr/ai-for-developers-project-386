@@ -66,7 +66,7 @@ export function buildApp(): FastifyInstance {
         weekSlots(date, {
           events: adminEvents.list(),
           durationMinutes,
-          busyStarts: bookings.busyStarts(),
+          busyIntervals: bookings.busyIntervals(),
         }),
       );
     },
@@ -77,7 +77,11 @@ export function buildApp(): FastifyInstance {
     {
       schema: {
         body: schemas.BookingInput,
-        response: { 201: schemas.Booking, 400: ERROR_BODY },
+        response: {
+          201: schemas.Booking,
+          400: ERROR_BODY,
+          409: schemas.ErrorBody,
+        },
       },
     },
     async (req, reply) => {
@@ -110,11 +114,19 @@ export function buildApp(): FastifyInstance {
           .send({ message: "Слот не существует или уже в прошлом" });
       }
 
+      // антидубль: одно время нельзя занять дважды, даже разными длительностями
+      if (bookings.overlaps(slotStart, durationMinutes)) {
+        return reply
+          .code(409)
+          .send({ message: "Слот уже занят — выберите другой" });
+      }
+
       return reply
         .code(201)
         .send(
           bookings.create({
             slotStart,
+            durationMinutes,
             name: name.trim(),
             email: email.trim(),
             ...(comment ? { comment } : {}),

@@ -1,3 +1,5 @@
+import { intervalsIntersect } from "./intervals";
+
 export type Slot = {
   start: string;
   end: string;
@@ -84,8 +86,8 @@ type WeekSlotsOptions = {
   events?: TimeRange[];
   /** Шаг нарезки событий (длительность выбранного типа встречи). */
   durationMinutes?: number;
-  /** Начало забронированных слотов (UTC ISO) — они получают статус busy. */
-  busyStarts?: Set<string>;
+  /** Занятые интервалы записей (UTC ISO): слот, пересекающий любой из них, получает busy. */
+  busyIntervals?: Array<{ start: string; end: string }>;
   /** Текущий момент (для тестов). */
   now?: Date;
 };
@@ -101,7 +103,7 @@ export function weekSlots(
   {
     events,
     durationMinutes,
-    busyStarts,
+    busyIntervals,
     now = new Date(),
   }: WeekSlotsOptions = {},
 ): WeekSlots {
@@ -109,8 +111,15 @@ export function weekSlots(
   const days: DaySlots[] = [];
   const step = durationMinutes ?? SLOT_STEP_MINUTES;
 
-  const statusOf = (startIso: string): Slot["status"] =>
-    busyStarts?.has(startIso) ? "busy" : "free";
+  // слот занят, если пересекается с любой записью (антидубль для разных длительностей)
+  const statusOf = (startIso: string, endIso: string): Slot["status"] => {
+    const start = Date.parse(startIso);
+    const end = Date.parse(endIso);
+    const busy = busyIntervals?.some((b) =>
+      intervalsIntersect(start, end, Date.parse(b.start), Date.parse(b.end)),
+    );
+    return busy ? "busy" : "free";
+  };
 
   for (let i = 0; i < 7; i++) {
     const day = new Date(weekStart);
@@ -140,7 +149,7 @@ export function weekSlots(
           slots.push({
             start: start.toISOString(),
             end: end.toISOString(),
-            status: statusOf(start.toISOString()),
+            status: statusOf(start.toISOString(), end.toISOString()),
           });
         }
       }
@@ -161,7 +170,7 @@ export function weekSlots(
         slots.push({
           start: start.toISOString(),
           end: end.toISOString(),
-          status: statusOf(start.toISOString()),
+          status: statusOf(start.toISOString(), end.toISOString()),
         });
       }
     }
