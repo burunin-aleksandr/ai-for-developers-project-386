@@ -46,7 +46,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** @description Предстоящие записи для админа (демо без авторизации): тип встречи, дата и время. Только просмотр — отмена и изменение недоступны. */
+        get: operations["listBookings"];
         put?: never;
         /** @description Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей. Одно время нельзя занять дважды — конфликт → 409. */
         post: operations["createBooking"];
@@ -172,6 +173,11 @@ export interface components {
              * @description Начало слота (UTC)
              */
             slotStart: string;
+            /**
+             * Format: int64
+             * @description Тип встречи, на который записался гость
+             */
+            meetingTypeId: number;
             /** @description Имя гостя */
             name: string;
             /** @description Email гостя */
@@ -187,10 +193,10 @@ export interface components {
              */
             slotStart: string;
             /**
-             * @description Длительность выбранного типа встречи — по ней нарезан сет, который видел гость
-             * @enum {number}
+             * Format: int64
+             * @description Тип встречи — по его длительности нарезан сет, который видел гость
              */
-            durationMinutes: 15 | 30 | 45 | 60;
+            meetingTypeId: number;
             /** @description Имя гостя (обязательно) */
             name: string;
             /** @description Email гостя (обязательно) */
@@ -269,6 +275,21 @@ export interface components {
              * @enum {string}
              */
             status: "free" | "busy";
+        };
+        /** @description Предстоящая запись для админа: только просмотр, отмена/изменение недоступны. */
+        UpcomingBooking: {
+            /**
+             * Format: int64
+             * @description Идентификатор записи
+             */
+            id: number;
+            /**
+             * Format: date-time
+             * @description Начало слота (UTC)
+             */
+            slotStart: string;
+            /** @description Название типа встречи */
+            meetingTypeName: string;
         };
         /** @description Неделя бронирования: пн–вс. */
         WeekSlots: {
@@ -352,6 +373,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    listBookings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request has succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        bookings: components["schemas"]["UpcomingBooking"][];
+                    };
+                };
             };
         };
     };

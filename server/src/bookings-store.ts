@@ -3,15 +3,17 @@ import { intervalsIntersect } from "./intervals";
 export type Booking = {
   id: number;
   slotStart: string;
-  /** Длительность типа встречи — по ней считается занятый интервал. */
+  meetingTypeId: number;
+  /** Снимок длительности типа на момент брони — по нему считается интервал. */
   durationMinutes: number;
   name: string;
   email: string;
   comment?: string;
 };
 
-export type BookingInput = {
+export type BookingDraft = {
   slotStart: string;
+  meetingTypeId: number;
   durationMinutes: number;
   name: string;
   email: string;
@@ -38,7 +40,14 @@ export class BookingStore {
     return [...this.items.values()];
   }
 
-  create(input: BookingInput): Booking {
+  /** Предстоящие записи (начало позже now), по возрастанию времени. */
+  listUpcoming(now: Date): Booking[] {
+    return [...this.items.values()]
+      .filter((b) => Date.parse(b.slotStart) > now.getTime())
+      .sort((a, b) => a.slotStart.localeCompare(b.slotStart));
+  }
+
+  create(input: BookingDraft): Booking {
     const booking: Booking = { id: this.nextId++, ...input };
     this.items.set(booking.id, booking);
     return booking;

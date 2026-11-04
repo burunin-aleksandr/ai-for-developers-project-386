@@ -110,6 +110,9 @@ model Booking {
   @doc("Начало слота (UTC)")
   slotStart: utcDateTime;
 
+  @doc("Тип встречи, на который записался гость")
+  meetingTypeId: int64;
+
   @doc("Имя гостя")
   name: string;
 
@@ -125,8 +128,8 @@ model BookingInput {
   @doc("Начало слота (UTC) — бронируется только целый слот")
   slotStart: utcDateTime;
 
-  @doc("Длительность выбранного типа встречи — по ней нарезан сет, который видел гость")
-  durationMinutes: DurationMinutes;
+  @doc("Тип встречи — по его длительности нарезан сет, который видел гость")
+  meetingTypeId: int64;
 
   @doc("Имя гостя (обязательно)")
   name: string;
@@ -136,6 +139,18 @@ model BookingInput {
 
   @doc("Комментарий гостя (необязательно)")
   comment?: string;
+}
+
+/** Предстоящая запись для админа: только просмотр, отмена/изменение недоступны. */
+model UpcomingBooking {
+  @doc("Идентификатор записи")
+  id: int64;
+
+  @doc("Начало слота (UTC)")
+  slotStart: utcDateTime;
+
+  @doc("Название типа встречи")
+  meetingTypeName: string;
 }
 
 /** Слот недели. Время хранится в UTC; отображение — UTC+3. */
@@ -216,6 +231,15 @@ model ErrorBody {
   @doc("Сообщение об ошибке")
   message: string;
 }
+
+@get
+@route("/bookings")
+@doc("Предстоящие записи для админа (демо без авторизации): тип встречи, дата и время. Только просмотр — отмена и изменение недоступны.")
+op listBookings(): {
+  @body body: {
+    bookings: UpcomingBooking[];
+  };
+};
 
 @post
 @route("/bookings")

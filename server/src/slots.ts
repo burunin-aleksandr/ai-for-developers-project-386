@@ -199,12 +199,15 @@ export function isValidDate(value: unknown): value is string {
 export function isExistingSlotStart(
   slotStartIso: string,
   events: TimeRange[],
-  durationMinutes?: number,
+  {
+    durationMinutes,
+    now,
+  }: { durationMinutes?: number; now?: Date } = {},
 ): boolean {
   const start = new Date(slotStartIso);
   if (Number.isNaN(start.getTime())) return false;
 
-  const week = weekSlots(formatDate(start), { events, durationMinutes });
+  const week = weekSlots(formatDate(start), { events, durationMinutes, now });
   return week.days.some((day) =>
     day.slots.some((slot) => slot.start === start.toISOString()),
   );

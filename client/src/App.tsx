@@ -13,6 +13,7 @@ type MeetingTypeInput = components["schemas"]["MeetingTypeInput"];
 type WeekSlots = components["schemas"]["WeekSlots"];
 type Slot = components["schemas"]["Slot"];
 type AdminEvent = components["schemas"]["AdminEvent"];
+type UpcomingBooking = components["schemas"]["UpcomingBooking"];
 
 const DURATIONS = [15, 30, 45, 60] as const;
 
@@ -56,6 +57,10 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     comment: "",
   });
   const [bookingError, setBookingError] = useState<string | null>(null);
+  // предстоящие записи для админа (только просмотр)
+  const [upcomingBookings, setUpcomingBookings] = useState<
+    UpcomingBooking[]
+  >([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +83,23 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // список предстоящих записей загружается при открытии админки
+  useEffect(() => {
+    if (view !== "admin") return;
+    let cancelled = false;
+    void fetch(`${baseUrl}/bookings`)
+      .then((res) => res.json())
+      .then((data: { bookings: UpcomingBooking[] }) => {
+        if (!cancelled) setUpcomingBookings(data.bookings);
+      })
+      .catch((err) => {
+        if (!cancelled) console.error(err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, baseUrl]);
 
   async function load(): Promise<MeetingType[]> {
     const res = await fetch(`${baseUrl}/meeting-types`);
@@ -204,7 +226,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         slotStart: selectedSlot.start,
-        durationMinutes: selectedType.durationMinutes,
+        meetingTypeId: selectedType.id,
         name: bookingForm.name,
         email: bookingForm.email,
         ...(bookingForm.comment ? { comment: bookingForm.comment } : {}),
@@ -597,6 +619,18 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
               {eventError && <p role="alert">{eventError}</p>}
             </form>
           )}
+
+          <h3>Предстоящие записи</h3>
+          <ul aria-label="Предстоящие записи">
+            {upcomingBookings.length === 0 && <li>Пока нет записей</li>}
+            {upcomingBookings.map((b) => (
+              <li key={b.id}>
+                <span>{b.meetingTypeName}</span>
+                <span>{fmtDate(b.slotStart.slice(0, 10))}</span>
+                <span>{fmtTime(b.slotStart)}</span>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </main>

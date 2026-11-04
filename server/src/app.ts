@@ -16,7 +16,12 @@ const ERROR_BODY = {
   required: ["message"],
 } as const;
 
-export function buildApp(): FastifyInstance {
+export type BuildAppOptions = {
+  /** Текущий момент (для тестов); по умолчанию — системные часы. */
+  now?: () => Date;
+};
+
+export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify();
   const schemas = loadContractSchemas();
   const meetingTypes = new MeetingTypeStore();
@@ -67,9 +72,36 @@ export function buildApp(): FastifyInstance {
           events: adminEvents.list(),
           durationMinutes,
           busyIntervals: bookings.busyIntervals(),
+          now: now(),
         }),
       );
     },
+  );
+
+  app.get(
+    "/bookings",
+    {
+      schema: {
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              bookings: { type: "array", items: schemas.UpcomingBooking },
+            },
+            required: ["bookings"],
+          },
+        },
+      },
+    },
+    async () => ({
+      // только предстоящие: тип встречи, дата и время — без личных данных
+      bookings: bookings.listUpcoming(now()).map((b) => ({
+        id: b.id,
+        slotStart: b.slotStart,
+        // тип нельзя удалить (GLOSSARY), поэтому у записи всегда есть тип
+        meetingTypeName: meetingTypes.get(b.meetingTypeId)!.name,
+      })),
+    }),
   );
 
   app.post(
@@ -85,10 +117,10 @@ export function buildApp(): FastifyInstance {
       },
     },
     async (req, reply) => {
-      const { slotStart, durationMinutes, name, email, comment } =
+      const { slotStart, meetingTypeId, name, email, comment } =
         req.body as {
           slotStart: string;
-          durationMinutes: number;
+          meetingTypeId: number;
           name: string;
           email: string;
           comment?: string;
@@ -100,14 +132,19 @@ export function buildApp(): FastifyInstance {
           .send({ message: "Имя и email обязательны" });
       }
 
+      // сет гостя нарезан длительностью выбранного типа встречи
+      const meetingType = meetingTypes.get(meetingTypeId);
+      if (!meetingType) {
+        return reply.code(400).send({ message: "Тип встречи не найден" });
+      }
+      const durationMinutes = meetingType.durationMinutes;
+
       // бронируется только целый слот из сета, который видел гость
-      // (сет гостя нарезан длительностью его типа встречи)
       if (
-        !isExistingSlotStart(
-          slotStart,
-          adminEvents.list(),
+        !isExistingSlotStart(slotStart, adminEvents.list(), {
           durationMinutes,
-        )
+          now: now(),
+        })
       ) {
         return reply
           .code(400)
@@ -126,6 +163,7 @@ export function buildApp(): FastifyInstance {
         .send(
           bookings.create({
             slotStart,
+            meetingTypeId,
             durationMinutes,
             name: name.trim(),
             email: email.trim(),

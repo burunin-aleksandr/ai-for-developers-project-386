@@ -27,6 +27,7 @@ beforeEach(async () => {
   let bookings: Array<{
     id: number;
     slotStart: string;
+    meetingTypeId: number;
     durationMinutes: number;
     name: string;
     email: string;
@@ -112,9 +113,14 @@ beforeEach(async () => {
         if (!body.name?.trim() || !body.email?.trim()) {
           return send(400, { message: "Имя и email обязательны" });
         }
+        // как и на сервере: тип встречи обязателен, длительность берётся из него
+        const type = types.find((t) => t.id === body.meetingTypeId);
+        if (!type) {
+          return send(400, { message: "Тип встречи не найден" });
+        }
         // антидубль: пересечение интервалов → 409
         const start = Date.parse(body.slotStart);
-        const end = start + (body.durationMinutes ?? 15) * 60_000;
+        const end = start + type.durationMinutes * 60_000;
         const overlap = bookings.some((b) => {
           const bStart = Date.parse(b.slotStart);
           const bEnd = bStart + b.durationMinutes * 60_000;
@@ -125,18 +131,36 @@ beforeEach(async () => {
             message: "Слот уже занят — выберите другой",
           });
         }
-        const created = { id: nextBookingId++, ...body };
+        const created = {
+          id: nextBookingId++,
+          ...body,
+          durationMinutes: type.durationMinutes,
+        };
         bookings.push(created);
-        // контракт Booking не включает durationMinutes — отдаём только поля модели
+        // контракт Booking: без внутреннего durationMinutes
         send(201, {
           id: created.id,
           slotStart: created.slotStart,
+          meetingTypeId: created.meetingTypeId,
           name: created.name,
           email: created.email,
           ...(created.comment ? { comment: created.comment } : {}),
         });
       });
       return;
+    }
+    if (req.method === "GET" && url.pathname === "/bookings") {
+      // предстоящие записи для админа: тип, дата, время
+      const upcoming = bookings
+        .filter((b) => Date.parse(b.slotStart) > Date.now())
+        .sort((a, b) => a.slotStart.localeCompare(b.slotStart))
+        .map((b) => ({
+          id: b.id,
+          slotStart: b.slotStart,
+          meetingTypeName:
+            types.find((t) => t.id === b.meetingTypeId)?.name ?? "",
+        }));
+      return send(200, { bookings: upcoming });
     }
     if (req.method === "POST" && url.pathname === "/admin-events") {
       let raw = "";
@@ -623,11 +647,12 @@ describe("страницы: бронирование", () => {
   });
 
   test("слот заняли между выбором и отправкой — сообщение и возврат к выбору", async () => {
-    await fetch(`${baseUrl}/meeting-types`, {
+    const typeRes = await fetch(`${baseUrl}/meeting-types`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
     });
+    const type = (await typeRes.json()) as { id: number };
 
     const monday = weekStartOf(todayInDisplayZone());
     // первый свободный слот фейка — понедельник 07:15 UTC (10:15 UTC+3)
@@ -650,7 +675,7 @@ describe("страницы: бронирование", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         slotStart: raceStart,
-        durationMinutes: 15,
+        meetingTypeId: type.id,
         name: "Пётр",
         email: "petr@example.com",
       }),
@@ -676,9 +701,64 @@ describe("страницы: бронирование", () => {
     ).toBeNull();
     await screen.findByRole("list", { name: "Слоты" });
     // сетка перерисована: тот слот теперь «Занято» и недоступен
-    const busySlot = within(
-      screen.getByRole("list", { name: "Слоты" }),
-    ).getByRole("button", { name: /10:15.*Занято/ });
-    expect(busySlot).toBeDisabled();
+    await waitFor(
+      () => {
+        const busySlot = within(
+          screen.getByRole("list", { name: "Слоты" }),
+        ).queryByRole("button", { name: /10:15.*Занято/ });
+        expect(busySlot).not.toBeNull();
+        expect(busySlot).toBeDisabled();
+      },
+      { timeout: 3000 },
+    );
+  });
+});
+
+describe("страницы: админка", () => {
+  test("предстоящие записи: тип, дата, время — без отмены и изменения", async () => {
+    const typeRes = await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча 30", durationMinutes: 30 }),
+    });
+    const type = (await typeRes.json()) as { id: number };
+
+    // слот будущей недели — запись предстоящая
+    const monday = plusDays(weekStartOf(todayInDisplayZone()), 7);
+    await fetch(`${baseUrl}/bookings`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slotStart: `${monday}T07:00:00.000Z`,
+        meetingTypeId: type.id,
+        name: "Иван",
+        email: "ivan@example.com",
+      }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Админка" }),
+    );
+
+    expect(await screen.findByText("Предстоящие записи")).toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Предстоящие записи" });
+    expect(within(list).getByText("Встреча 30")).toBeInTheDocument();
+    expect(within(list).getByText(fmtDate(monday))).toBeInTheDocument();
+    expect(within(list).getByText("10:00")).toBeInTheDocument(); // 07:00 UTC = 10:00 UTC+3
+    // только просмотр: кнопок отмены/изменения в списке нет
+    expect(within(list).queryByRole("button")).toBeNull();
+  });
+
+  test("без записей админ видит подсказку, а не пустой список", async () => {
+    render(<App baseUrl={baseUrl} />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Админка" }),
+    );
+
+    const list = await screen.findByRole("list", {
+      name: "Предстоящие записи",
+    });
+    expect(within(list).getByText("Пока нет записей")).toBeInTheDocument();
   });
 });

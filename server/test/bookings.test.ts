@@ -21,14 +21,27 @@ describe("HTTP API seam: бронирование", () => {
     await app.close();
   });
 
+  /** Создаёт тип встречи и возвращает его id. */
+  async function createType(
+    durationMinutes: 15 | 30 | 45 | 60,
+  ): Promise<number> {
+    const res = await app.inject({
+      method: "POST",
+      url: "/meeting-types",
+      payload: { name: `Тип ${durationMinutes}`, durationMinutes },
+    });
+    return res.json().id as number;
+  }
+
   test("создание записи возвращает запись со сводкой", async () => {
     const monday = futureWeekMonday();
+    const typeId = await createType(15);
     const res = await app.inject({
       method: "POST",
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:00:00.000Z`,
-        durationMinutes: 15,
+        meetingTypeId: typeId,
         name: "Иван Петров",
         email: "ivan@example.com",
         comment: "Позвоните позже",
@@ -38,6 +51,7 @@ describe("HTTP API seam: бронирование", () => {
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({
       slotStart: `${monday}T07:00:00.000Z`,
+      meetingTypeId: typeId,
       name: "Иван Петров",
       email: "ivan@example.com",
       comment: "Позвоните позже",
@@ -47,13 +61,14 @@ describe("HTTP API seam: бронирование", () => {
 
   test("имя и email обязательны — без них 400", async () => {
     const monday = futureWeekMonday();
+    const typeId = await createType(15);
 
     const noName = await app.inject({
       method: "POST",
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:00:00.000Z`,
-        durationMinutes: 15,
+        meetingTypeId: typeId,
         email: "a@b.c",
       },
     });
@@ -64,7 +79,7 @@ describe("HTTP API seam: бронирование", () => {
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:00:00.000Z`,
-        durationMinutes: 15,
+        meetingTypeId: typeId,
         name: "Иван",
       },
     });
@@ -73,12 +88,13 @@ describe("HTTP API seam: бронирование", () => {
 
   test("комментарий опционален — запись создаётся без него", async () => {
     const monday = futureWeekMonday();
+    const typeId = await createType(15);
     const res = await app.inject({
       method: "POST",
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:00:00.000Z`,
-        durationMinutes: 15,
+        meetingTypeId: typeId,
         name: "Иван",
         email: "ivan@example.com",
       },
@@ -90,12 +106,13 @@ describe("HTTP API seam: бронирование", () => {
 
   test("забронированный слот становится «Занято» для всех гостей", async () => {
     const monday = futureWeekMonday();
+    const typeId = await createType(15);
     await app.inject({
       method: "POST",
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:00:00.000Z`,
-        durationMinutes: 15,
+        meetingTypeId: typeId,
         name: "Иван",
         email: "ivan@example.com",
       },
@@ -117,12 +134,13 @@ describe("HTTP API seam: бронирование", () => {
   });
 
   test("бронь на несуществующий слот отклоняется", async () => {
+    const typeId = await createType(15);
     const res = await app.inject({
       method: "POST",
       url: "/bookings",
       payload: {
         slotStart: "2020-01-06T07:00:00.000Z", // прошлая неделя — слотов нет
-        durationMinutes: 15,
+        meetingTypeId: typeId,
         name: "Иван",
         email: "ivan@example.com",
       },
@@ -133,6 +151,7 @@ describe("HTTP API seam: бронирование", () => {
 
   test("над событиями бронируется только слот сета гостя (длительность типа)", async () => {
     const monday = futureWeekMonday();
+    const type30 = await createType(30);
     // событие 07:00–08:00 UTC, гость с типом 30 мин видит 07:00 и 07:30
     await app.inject({
       method: "POST",
@@ -149,7 +168,7 @@ describe("HTTP API seam: бронирование", () => {
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:15:00.000Z`,
-        durationMinutes: 30,
+        meetingTypeId: type30,
         name: "Иван",
         email: "ivan@example.com",
       },
@@ -162,7 +181,7 @@ describe("HTTP API seam: бронирование", () => {
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:30:00.000Z`,
-        durationMinutes: 30,
+        meetingTypeId: type30,
         name: "Иван",
         email: "ivan@example.com",
       },
@@ -172,13 +191,15 @@ describe("HTTP API seam: бронирование", () => {
 
   test("пересечение интервалов разной длительности → 409", async () => {
     const monday = futureWeekMonday();
+    const type60 = await createType(60);
+    const type15 = await createType(15);
     // гость бронирует 07:00–08:00 (тип 60 мин)
     const first = await app.inject({
       method: "POST",
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:00:00.000Z`,
-        durationMinutes: 60,
+        meetingTypeId: type60,
         name: "Иван",
         email: "ivan@example.com",
       },
@@ -191,7 +212,7 @@ describe("HTTP API seam: бронирование", () => {
       url: "/bookings",
       payload: {
         slotStart: `${monday}T07:30:00.000Z`,
-        durationMinutes: 15,
+        meetingTypeId: type15,
         name: "Пётр",
         email: "petr@example.com",
       },
@@ -222,7 +243,7 @@ describe("HTTP API seam: бронирование", () => {
       url: "/bookings",
       payload: {
         slotStart: `${monday}T08:00:00.000Z`,
-        durationMinutes: 15,
+        meetingTypeId: type15,
         name: "Пётр",
         email: "petr@example.com",
       },
@@ -232,9 +253,10 @@ describe("HTTP API seam: бронирование", () => {
 
   test("гонка: слот заняли между выбором и отправкой → 409", async () => {
     const monday = futureWeekMonday();
+    const typeId = await createType(15);
     const payload = {
       slotStart: `${monday}T07:00:00.000Z`,
-      durationMinutes: 15,
+      meetingTypeId: typeId,
       name: "Иван",
       email: "ivan@example.com",
     };
@@ -267,5 +289,73 @@ describe("HTTP API seam: бронирование", () => {
       );
     expect(booked).toHaveLength(1);
     expect(booked[0].status).toBe("busy");
+  });
+
+  test("GET /bookings отдаёт предстоящие записи с типом встречи по возрастанию", async () => {
+    const monday = futureWeekMonday();
+    const type30 = await createType(30);
+    // создаём в обратном порядке — порядок в ответе должен быть по времени
+    await app.inject({
+      method: "POST",
+      url: "/bookings",
+      payload: {
+        slotStart: `${monday}T07:30:00.000Z`,
+        meetingTypeId: type30,
+        name: "Пётр",
+        email: "petr@example.com",
+      },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/bookings",
+      payload: {
+        slotStart: `${monday}T07:00:00.000Z`,
+        meetingTypeId: type30,
+        name: "Иван",
+        email: "ivan@example.com",
+      },
+    });
+
+    const res = await app.inject({ method: "GET", url: "/bookings" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.bookings).toHaveLength(2);
+    expect(body.bookings.map((b: { slotStart: string }) => b.slotStart)).toEqual(
+      [`${monday}T07:00:00.000Z`, `${monday}T07:30:00.000Z`],
+    );
+    expect(body.bookings[0]).toMatchObject({
+      meetingTypeName: "Тип 30",
+    });
+    // личные данные гостя в список не входят — только тип, дата и время
+    expect(JSON.stringify(body)).not.toContain("ivan@example.com");
+    expect(JSON.stringify(body)).not.toContain("Иван");
+  });
+
+  test("прошедшие записи не входят в список предстоящих", async () => {
+    let clock = new Date();
+    await app.close();
+    app = buildApp({ now: () => clock });
+
+    const monday = futureWeekMonday();
+    const typeId = await createType(15);
+    await app.inject({
+      method: "POST",
+      url: "/bookings",
+      payload: {
+        slotStart: `${monday}T07:00:00.000Z`,
+        meetingTypeId: typeId,
+        name: "Иван",
+        email: "ivan@example.com",
+      },
+    });
+
+    const before = await app.inject({ method: "GET", url: "/bookings" });
+    expect(before.json().bookings).toHaveLength(1);
+
+    // время ушло далеко вперёд — запись стала прошедшей
+    clock = new Date(Date.now() + 60 * 24 * 3600 * 1000);
+    const after = await app.inject({ method: "GET", url: "/bookings" });
+    expect(after.json().bookings).toHaveLength(0);
   });
 });
