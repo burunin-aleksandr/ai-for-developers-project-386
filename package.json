@@ -9,6 +9,7 @@
     "generate": "pnpm --filter spec generate",
     "dev": "pnpm generate && pnpm -r --parallel dev",
     "build": "pnpm generate && pnpm --filter client build && pnpm --filter server typecheck",
-    "test": "pnpm generate && pnpm -r test"
+    "test": "pnpm generate && pnpm -r test",
+    "fixtures": "node fixtures/startup-fixtures.mjs"
   }
 }

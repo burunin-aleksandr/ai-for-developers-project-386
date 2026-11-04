@@ -3,7 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createServer, type Server } from "node:http";
 import App from "./App";
-import { fmtDate, plusDays, todayInDisplayZone, weekStartOf } from "./dates";
+import { fmtDate, fmtTime, plusDays, todayInDisplayZone, weekStartOf } from "./dates";
+import {
+  START_MEETING_TYPES,
+  fetchClient,
+  loadFixtures,
+  startAdminEvents,
+} from "../../fixtures/startup-fixtures.mjs";
 import type { AddressInfo } from "node:net";
 
 let server: Server;
@@ -760,5 +766,80 @@ describe("страницы: админка", () => {
       name: "Предстоящие записи",
     });
     expect(within(list).getByText("Пока нет записей")).toBeInTheDocument();
+  });
+});
+
+describe("страницы: фикстуры", () => {
+  test("чистый старт без фикстур: гость видит заглушку", async () => {
+    render(<App baseUrl={baseUrl} />);
+
+    expect(
+      await screen.findByText("Типы встреч не созданы"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Выбрать" })).toBeNull();
+  });
+
+  test("после загрузки фикстур гость и админка видят стартовые данные", async () => {
+    const counts = await loadFixtures(fetchClient(baseUrl));
+    expect(counts.meetingTypes).toBe(START_MEETING_TYPES.length);
+
+    render(<App baseUrl={baseUrl} />);
+
+    // гость видит стартовые типы, заглушка не показывается
+    for (const type of START_MEETING_TYPES) {
+      expect(await screen.findByText(type.name)).toBeInTheDocument();
+    }
+    expect(screen.queryByText("Типы встреч не созданы")).toBeNull();
+
+    // календарь: слоты строятся из событий фикстур на неделе события
+    const eventDate = startAdminEvents()[0].start.slice(0, 10);
+    const weekStart = weekStartOf(eventDate);
+    const targetLabel = `${fmtDate(weekStart)} — ${fmtDate(
+      plusDays(weekStart, 6),
+    )}`;
+
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Выбрать" })[0],
+    );
+
+    // ждём загрузки стартовой недели, затем идём вперёд до недели события
+    const weekLabel = () =>
+      screen.queryByText(/^\d{2}\.\d{2}\.\d{4} — \d{2}\.\d{2}\.\d{4}$/);
+    await waitFor(() => expect(weekLabel()).not.toBeNull());
+    for (let i = 0; i < 3 && !screen.queryByText(targetLabel); i++) {
+      const before = weekLabel()?.textContent;
+      await userEvent.click(screen.getByRole("button", { name: "→" }));
+      // ждём полной перезагрузки: появилась новая метка недели
+      await waitFor(() => {
+        const now = weekLabel()?.textContent;
+        expect(now).toBeTruthy();
+        expect(now).not.toBe(before);
+      });
+    }
+    expect(await screen.findByText(targetLabel)).toBeInTheDocument();
+
+    // день события содержит свободные слоты
+    const dayCell = screen.getByRole("button", {
+      name: (content) =>
+        content.includes(fmtDate(eventDate)) && /Свободно: [1-9]/.test(content),
+    });
+    await userEvent.click(dayCell);
+    const slots = await screen.findByRole("list", { name: "Слоты" });
+    expect(within(slots).getAllByRole("button").length).toBeGreaterThan(0);
+
+    // админка видит стартовые типы и события фикстур (время в UTC+3)
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Админка" }),
+    );
+    for (const type of START_MEETING_TYPES) {
+      expect(
+        await screen.findByRole("heading", { name: type.name }),
+      ).toBeInTheDocument();
+    }
+    for (const event of startAdminEvents()) {
+      expect(
+        screen.getByText(`${fmtTime(event.start)} — ${fmtTime(event.end)}`),
+      ).toBeInTheDocument();
+    }
   });
 });
