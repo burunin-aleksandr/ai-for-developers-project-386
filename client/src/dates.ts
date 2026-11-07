@@ -22,6 +22,17 @@ export function weekStartOf(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Смещение на n месяцев; день клампится к последнему дню целевого месяца. */
+export function plusMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return target.toISOString().slice(0, 10);
+}
+
 /** YYYY-MM-DD → DD.MM.YYYY. */
 export function fmtDate(iso: string): string {
   const [y, m, d] = iso.split("-");

@@ -177,8 +177,9 @@ describe("HTTP API seam: события админа", () => {
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.days).toHaveLength(7);
-    expect(body.days[0].slots).toHaveLength(32); // дефолтная сетка 10:00–18:00, шаг 15
+    expect(body.days).toHaveLength(42);
+    const day = body.days.find((d: { date: string }) => d.date === monday);
+    expect(day.slots).toHaveLength(32); // дефолтная сетка 10:00–18:00, шаг 15
   });
 
   test("список событий отдаёт созданные события", async () => {

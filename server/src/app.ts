@@ -7,7 +7,7 @@ import {
   isExistingSlotStart,
   isWithinBookingWindow,
   isValidDate,
-  weekSlots,
+  monthSlots,
 } from "./slots";
 
 const ERROR_BODY = {
@@ -51,7 +51,7 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
           required: ["date"],
         },
         response: {
-          200: schemas.WeekSlots,
+          200: schemas.MonthSlots,
           400: ERROR_BODY,
         },
       },
@@ -68,7 +68,7 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
         durationMinutes?: number;
       };
       return reply.send(
-        weekSlots(date, {
+        monthSlots(date, {
           events: adminEvents.list(),
           durationMinutes,
           busyIntervals: bookings.busyIntervals(),

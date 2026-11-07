@@ -1,13 +1,10 @@
 import { buildApp } from "../src/app";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-/** Любой понедельник в будущем — для детерминированных проверок окна и шага. */
-function futureWeekMonday(): string {
+/** Любая будущая дата (+14 дней) — для детерминированных проверок окна и шага. */
+function futureDate(): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + 14); // две недели вперёд — гарантированно будущее
-  const day = d.getUTCDay(); // 0=вс
-  const offsetToMonday = (day + 6) % 7;
-  d.setUTCDate(d.getUTCDate() - offsetToMonday);
   return d.toISOString().slice(0, 10);
 }
 
@@ -18,7 +15,15 @@ function mondayOfCurrentWeek(): string {
   return d.toISOString().slice(0, 10);
 }
 
-describe("HTTP API seam: слоты недели", () => {
+/** Понедельник недели, в которую попадает 1-е число месяца даты — старт сетки. */
+function gridStartOf(date: string): string {
+  const first = new Date(`${date.slice(0, 7)}-01T00:00:00.000Z`);
+  const offsetToMonday = (first.getUTCDay() + 6) % 7;
+  first.setUTCDate(first.getUTCDate() - offsetToMonday);
+  return first.toISOString().slice(0, 10);
+}
+
+describe("HTTP API seam: слоты месяца", () => {
   let app: ReturnType<typeof buildApp>;
 
   beforeEach(() => {
@@ -29,47 +34,53 @@ describe("HTTP API seam: слоты недели", () => {
     await app.close();
   });
 
-  test("будущая неделя: 7 дней, окно 10:00–18:00 UTC+3, шаг 15 минут", async () => {
+  test("сетка месяца: 42 дня, окно 10:00–18:00 UTC+3, шаг 15 минут", async () => {
+    const date = futureDate();
     const res = await app.inject({
       method: "GET",
-      url: `/slots?date=${futureWeekMonday()}`,
+      url: `/slots?date=${date}`,
     });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.days).toHaveLength(7);
+    expect(body.days).toHaveLength(42);
 
-    const [firstDay] = body.days;
-    expect(firstDay.freeCount).toBe(32); // 8 часов × 4 слота в час
-    expect(firstDay.slots).toHaveLength(32);
+    const day = body.days.find((d: { date: string }) => d.date === date);
+    expect(day).toBeDefined();
+    expect(day.freeCount).toBe(32); // 8 часов × 4 слота в час
+    expect(day.slots).toHaveLength(32);
 
     // первый слот: 10:00 UTC+3 = 07:00 UTC
-    expect(firstDay.slots[0].start).toBe(
-      `${firstDay.date}T07:00:00.000Z`,
-    );
+    expect(day.slots[0].start).toBe(`${date}T07:00:00.000Z`);
     // последний слот заканчивается в 18:00 UTC+3 = 15:00 UTC
-    expect(firstDay.slots.at(-1).end).toBe(`${firstDay.date}T15:00:00.000Z`);
+    expect(day.slots.at(-1).end).toBe(`${date}T15:00:00.000Z`);
     // шаг 15 минут
-    expect(firstDay.slots[1].start).toBe(
-      `${firstDay.date}T07:15:00.000Z`,
-    );
-    // все слоты свободны (бронирование появится в соседнем тикете)
-    expect(firstDay.slots.every((s: { status: string }) => s.status === "free")).toBe(true);
+    expect(day.slots[1].start).toBe(`${date}T07:15:00.000Z`);
+    // все слоты свободны
+    expect(
+      day.slots.every((s: { status: string }) => s.status === "free"),
+    ).toBe(true);
   });
 
-  test("даты возвращаются как понедельник–воскресенье недели даты", async () => {
-    const monday = futureWeekMonday();
-    const res = await app.inject({ method: "GET", url: `/slots?date=${monday}` });
+  test("даты: 42 дня пн–вс, старт — понедельник недели 1-го числа", async () => {
+    const date = futureDate();
+    const res = await app.inject({
+      method: "GET",
+      url: `/slots?date=${date}`,
+    });
 
     const body = res.json();
-    expect(body.weekStart).toBe(monday);
+    expect(body.month).toBe(`${date.slice(0, 7)}-01`);
+    const start = gridStartOf(date);
     expect(body.days.map((d: { date: string }) => d.date)).toEqual(
-      Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(`${monday}T00:00:00Z`);
+      Array.from({ length: 42 }, (_, i) => {
+        const d = new Date(`${start}T00:00:00Z`);
         d.setUTCDate(d.getUTCDate() + i);
         return d.toISOString().slice(0, 10);
       }),
     );
+    // сетка всегда начинается с понедельника
+    expect(new Date(`${body.days[0].date}T00:00:00Z`).getUTCDay()).toBe(1);
   });
 
   test("прошедшее время не возвращается", async () => {
@@ -88,16 +99,16 @@ describe("HTTP API seam: слоты недели", () => {
     }
   });
 
-  test("прошлая неделя полностью пустая (всё время в прошлом)", async () => {
+  test("прошлый месяц полностью пустой (всё время в прошлом)", async () => {
     const res = await app.inject({
       method: "GET",
-      url: "/slots?date=2020-01-06", // понедельник
+      url: "/slots?date=2020-01-06",
     });
 
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.weekStart).toBe("2020-01-06");
-    expect(body.days).toHaveLength(7);
+    expect(body.month).toBe("2020-01-01");
+    expect(body.days).toHaveLength(42);
     expect(
       body.days.every(
         (d: { slots: unknown[]; freeCount: number }) =>

@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createServer, type Server } from "node:http";
-import App from "./App";
+import App, { monthLabel } from "./App";
 import { fmtDate, fmtTime, plusDays, todayInDisplayZone, weekStartOf } from "./dates";
 import {
   START_MEETING_TYPES,
@@ -50,11 +50,13 @@ beforeEach(async () => {
 
     if (req.method === "GET" && url.pathname === "/slots") {
       const date = url.searchParams.get("date") ?? "";
-      const d = new Date(`${date}T00:00:00.000Z`);
+      // сетка месяца: 42 дня пн–вс с понедельника недели 1-го числа
+      const monthStart = `${date.slice(0, 7)}-01`;
+      const d = new Date(`${monthStart}T00:00:00.000Z`);
       const offset = (d.getUTCDay() + 6) % 7;
       d.setUTCDate(d.getUTCDate() - offset);
       const duration = Number(url.searchParams.get("durationMinutes") ?? 15);
-      const days = Array.from({ length: 7 }, (_, i) => {
+      const days = Array.from({ length: 42 }, (_, i) => {
         const day = new Date(d);
         day.setUTCDate(d.getUTCDate() + i);
         const dateStr = day.toISOString().slice(0, 10);
@@ -79,8 +81,8 @@ beforeEach(async () => {
               return out;
             });
         } else {
-          // дефолтная сетка: первый слот сдвигается на час с индексом дня
-          const hour = String(7 + i).padStart(2, "0");
+          // дефолтная сетка: первый слот сдвигается на час с индексом дня недели
+          const hour = String(7 + (i % 7)).padStart(2, "0");
           slots = [0, 1, 2].map((j) => ({
             start: `${dateStr}T${hour}:${String(j * 15).padStart(2, "0")}:00.000Z`,
             end: `${dateStr}T${hour}:${String(j * 15 + 15).padStart(2, "0")}:00.000Z`,
@@ -106,7 +108,7 @@ beforeEach(async () => {
           slots,
         };
       });
-      return send(200, { weekStart: days[0].date, days });
+      return send(200, { month: monthStart, days });
     }
     if (req.method === "GET" && url.pathname === "/admin-events") {
       return send(200, { adminEvents: events });
@@ -324,12 +326,29 @@ function mondayOfToday(): string {
   return weekStartOf(todayInDisplayZone());
 }
 
+/** Старт сетки месяца — понедельник недели 1-го числа (как его строит сервер). */
+function gridStartOfMonth(): string {
+  return weekStartOf(`${todayInDisplayZone().slice(0, 7)}-01`);
+}
+
+/** 1-е число следующего месяца — есть в текущей сетке как смежный день. */
+function nextMonthDate(day: number): string {
+  const d = new Date(`${todayInDisplayZone().slice(0, 7)}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1, day);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 15-е число следующего месяца — не влезает в сетку текущего месяца. */
+function fifteenthOfNextMonth(): string {
+  return nextMonthDate(15);
+}
+
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-describe("страницы: недельный календарь", () => {
-  test("выбор типа встречи открывает недельный календарь", async () => {
+describe("страницы: месячный календарь", () => {
+  test("выбор типа встречи открывает календарь месяца (сетка 42 дня)", async () => {
     await fetch(`${baseUrl}/meeting-types`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -342,14 +361,20 @@ describe("страницы: недельный календарь", () => {
       await screen.findByRole("button", { name: "Выбрать" }),
     );
 
-    expect(
-      (await screen.findAllByRole("button", { name: /Свободно: 3/ })).length,
-    ).toBeGreaterThan(0);
+    // сетка месяца: ровно 42 ячейки дней со счётчиком «Свободно: N»
+    const dayCells = await screen.findAllByRole("button", {
+      name: /Свободно: \d+/,
+    });
+    expect(dayCells).toHaveLength(42);
     expect(screen.getByRole("button", { name: "←" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "→" })).toBeInTheDocument();
+    // заголовок — месяц сетки
+    expect(
+      await screen.findByText(monthLabel(todayInDisplayZone())),
+    ).toBeInTheDocument();
   });
 
-  test("стрелки листают неделю вперёд и назад", async () => {
+  test("стрелки листают месяц вперёд и назад", async () => {
     await fetch(`${baseUrl}/meeting-types`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -363,17 +388,57 @@ describe("страницы: недельный календарь", () => {
     );
     await screen.findAllByRole("button", { name: /Свободно: \d+/ });
 
+    // 15-е следующего месяца в сетке текущего месяца не помещается
+    const next15 = fmtDate(fifteenthOfNextMonth());
+    expect(
+      screen.queryByRole("button", { name: new RegExp(escapeRe(next15)) }),
+    ).toBeNull();
+
     await userEvent.click(screen.getByRole("button", { name: "→" }));
     expect(
-      await screen.findByRole("button", {
-        name: new RegExp(escapeRe(fmtDate(plusDays(mondayOfToday(), 7)))),
-      }),
+      await screen.findByRole("button", { name: new RegExp(escapeRe(next15)) }),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "←" }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: new RegExp(escapeRe(next15)) }),
+      ).toBeNull();
+    });
     expect(
       await screen.findByRole("button", {
-        name: new RegExp(escapeRe(fmtDate(mondayOfToday()))),
+        name: new RegExp(escapeRe(fmtDate(`${todayInDisplayZone().slice(0, 7)}-15`))),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  test("клик по дню соседнего месяца переключает вид на этот месяц", async () => {
+    await fetch(`${baseUrl}/meeting-types`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Встреча", durationMinutes: 15 }),
+    });
+
+    render(<App baseUrl={baseUrl} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Выбрать" }),
+    );
+    await screen.findAllByRole("button", { name: /Свободно: \d+/ });
+
+    // 1-е число следующего месяца присутствует в текущей сетке как смежный день
+    const first = fmtDate(nextMonthDate(1));
+    await userEvent.click(
+      screen.getByRole("button", { name: new RegExp(escapeRe(first)) }),
+    );
+
+    // вид переключился: заголовок — следующий месяц, его сетка загружена
+    expect(
+      await screen.findByText(monthLabel(nextMonthDate(1))),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", {
+        name: new RegExp(escapeRe(fmtDate(nextMonthDate(20)))),
       }),
     ).toBeInTheDocument();
   });
@@ -660,9 +725,8 @@ describe("страницы: бронирование", () => {
     });
     const type = (await typeRes.json()) as { id: number };
 
-    const monday = weekStartOf(todayInDisplayZone());
-    // первый свободный слот фейка — понедельник 07:15 UTC (10:15 UTC+3)
-    const raceStart = `${monday}T07:15:00.000Z`;
+    // первый свободный слот фейка — старт сетки (понедельник) 07:15 UTC (10:15 UTC+3)
+    const raceStart = `${gridStartOfMonth()}T07:15:00.000Z`;
 
     render(<App baseUrl={baseUrl} />);
     await userEvent.click(
@@ -791,32 +855,17 @@ describe("страницы: фикстуры", () => {
     }
     expect(screen.queryByText("Типы встреч не созданы")).toBeNull();
 
-    // календарь: слоты строятся из событий фикстур на неделе события
+    // календарь: событие фикстур (завтра) всегда попадает в сетку текущего месяца
     const eventDate = startAdminEvents()[0].start.slice(0, 10);
-    const weekStart = weekStartOf(eventDate);
-    const targetLabel = `${fmtDate(weekStart)} — ${fmtDate(
-      plusDays(weekStart, 6),
-    )}`;
 
     await userEvent.click(
       screen.getAllByRole("button", { name: "Выбрать" })[0],
     );
 
-    // ждём загрузки стартовой недели, затем идём вперёд до недели события
-    const weekLabel = () =>
-      screen.queryByText(/^\d{2}\.\d{2}\.\d{4} — \d{2}\.\d{2}\.\d{4}$/);
-    await waitFor(() => expect(weekLabel()).not.toBeNull());
-    for (let i = 0; i < 3 && !screen.queryByText(targetLabel); i++) {
-      const before = weekLabel()?.textContent;
-      await userEvent.click(screen.getByRole("button", { name: "→" }));
-      // ждём полной перезагрузки: появилась новая метка недели
-      await waitFor(() => {
-        const now = weekLabel()?.textContent;
-        expect(now).toBeTruthy();
-        expect(now).not.toBe(before);
-      });
-    }
-    expect(await screen.findByText(targetLabel)).toBeInTheDocument();
+    // заголовок календаря — месяц сетки
+    expect(
+      await screen.findByText(monthLabel(todayInDisplayZone())),
+    ).toBeInTheDocument();
 
     // день события содержит свободные слоты
     const dayCell = screen.getByRole("button", {

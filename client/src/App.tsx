@@ -4,13 +4,13 @@ import {
   DISPLAY_UTC_OFFSET_HOURS,
   fmtDate,
   fmtTime,
-  plusDays,
+  plusMonths,
   todayInDisplayZone,
 } from "./dates";
 
 type MeetingType = components["schemas"]["MeetingType"];
 type MeetingTypeInput = components["schemas"]["MeetingTypeInput"];
-type WeekSlots = components["schemas"]["WeekSlots"];
+type MonthSlots = components["schemas"]["MonthSlots"];
 type Slot = components["schemas"]["Slot"];
 type AdminEvent = components["schemas"]["AdminEvent"];
 type UpcomingBooking = components["schemas"]["UpcomingBooking"];
@@ -46,7 +46,7 @@ const SECTION_TITLE = "text-lg font-semibold text-slate-900";
 const INFO_BOX = "rounded-xl bg-slate-100 px-4 py-3";
 
 /** Русский месяц и год для заголовка календаря («ноябрь 2026 г.»). */
-function monthLabel(iso: string): string {
+export function monthLabel(iso: string): string {
   const d = new Date(`${iso}T00:00:00.000Z`);
   const month = new Intl.DateTimeFormat("ru-RU", {
     month: "long",
@@ -145,8 +145,8 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   const [form, setForm] = useState<MeetingTypeInput>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<MeetingType | null>(null);
-  const [weekDate, setWeekDate] = useState<string>(todayInDisplayZone);
-  const [week, setWeek] = useState<WeekSlots | null>(null);
+  const [monthDate, setMonthDate] = useState<string>(todayInDisplayZone);
+  const [monthGrid, setMonthGrid] = useState<MonthSlots | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [adminEvents, setAdminEvents] = useState<AdminEvent[]>([]);
   const [eventForm, setEventForm] = useState<{ start: string; end: string } | null>(
@@ -222,21 +222,21 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
     return data.adminEvents;
   }
 
-  /** Слоты недели считаются на лету при смене недели. День открыт по умолчанию — первый с слотами. */
+  /** Слоты месяца считаются на лету при смене месяца. День открыт по умолчанию — первый с слотами. */
   useEffect(() => {
     if (!selectedType) {
-      setWeek(null);
+      setMonthGrid(null);
       setSelectedDay(null);
       return;
     }
     let cancelled = false;
     fetch(
-      `${baseUrl}/slots?date=${weekDate}&durationMinutes=${selectedType.durationMinutes}`,
+      `${baseUrl}/slots?date=${monthDate}&durationMinutes=${selectedType.durationMinutes}`,
     )
       .then((res) => res.json())
-      .then((data: WeekSlots) => {
+      .then((data: MonthSlots) => {
         if (cancelled) return;
-        setWeek(data);
+        setMonthGrid(data);
         setSelectedDay(
           (prev) =>
             (prev && data.days.some((d) => d.date === prev)
@@ -253,7 +253,14 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedType, weekDate, slotsRevision]);
+  }, [selectedType, monthDate, slotsRevision]);
+
+  /** Листание по месяцам: выбранные день и слот сбрасываются. */
+  function shiftMonth(delta: number) {
+    setMonthDate((d) => plusMonths(d, delta));
+    setSelectedDay(null);
+    setSelectedSlot(null);
+  }
 
   async function save() {
     if (!editing) return;
@@ -624,7 +631,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                     <div className={INFO_BOX}>
                       <p className="text-sm text-slate-500">Свободно</p>
                       <p className="mt-0.5 font-semibold tabular-nums">
-                        {week?.days.find((d) => d.date === selectedDay)
+                        {monthGrid?.days.find((d) => d.date === selectedDay)
                           ?.freeCount ?? 0}
                       </p>
                     </div>
@@ -643,17 +650,17 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                 <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <h2 className="text-lg font-bold">Календарь</h2>
-                    <nav aria-label="Неделя" className="flex gap-2">
+                    <nav aria-label="Месяц" className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setWeekDate((d) => plusDays(d, -7))}
+                        onClick={() => shiftMonth(-1)}
                         className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
                       >
                         ←
                       </button>
                       <button
                         type="button"
-                        onClick={() => setWeekDate((d) => plusDays(d, 7))}
+                        onClick={() => shiftMonth(1)}
                         className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
                       >
                         →
@@ -661,15 +668,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                     </nav>
                   </div>
                   <p className="text-sm font-semibold text-slate-700">
-                    {week ? monthLabel(week.weekStart) : "Загрузка…"}
-                  </p>
-                  {/* метка недели — контракт тестов (точный формат) */}
-                  <p className="text-xs tabular-nums text-slate-500">
-                    {week
-                      ? `${fmtDate(week.weekStart)} — ${fmtDate(
-                          plusDays(week.weekStart, 6),
-                        )}`
-                      : "Загрузка…"}
+                    {monthGrid ? monthLabel(monthGrid.month) : "Загрузка…"}
                   </p>
                   <div className="mb-2 mt-4 grid grid-cols-7 gap-1.5 text-center text-xs font-medium text-slate-500">
                     <span>Пн</span>
@@ -680,22 +679,30 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                     <span>Сб</span>
                     <span>Вс</span>
                   </div>
-                  {week && (
+                  {monthGrid && (
                     <ul
-                      aria-label="Дни недели"
+                      aria-label="Дни месяца"
                       className="grid grid-cols-7 gap-1.5"
                     >
-                      {week.days.map((day) => {
+                      {monthGrid.days.map((day) => {
                         const isSelected = selectedDay === day.date;
                         const inMonth =
-                          day.date.slice(0, 7) === week.weekStart.slice(0, 7);
+                          day.date.slice(0, 7) === monthGrid.month.slice(0, 7);
                         return (
                           <li key={day.date}>
                             <button
                               type="button"
                               aria-pressed={isSelected}
-                              onClick={() => setSelectedDay(day.date)}
-                              className={`flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                              onClick={() => {
+                                if (day.date !== selectedDay) {
+                                  setSelectedDay(day.date);
+                                  // слот прежнего дня не должен пережить смену дня
+                                  setSelectedSlot(null);
+                                }
+                                // клик по дню соседнего месяца переключает вид
+                                if (!inMonth) setMonthDate(day.date);
+                              }}
+                              className={`flex h-full min-h-[50px] w-full flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
                                 isSelected
                                   ? "border-orange-500 bg-orange-50"
                                   : "border-slate-100 bg-slate-50 hover:border-orange-300"
@@ -708,7 +715,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                               >
                                 {Number(day.date.slice(8, 10))}
                               </span>
-                              {inMonth && day.freeCount > 0 && (
+                              {day.freeCount > 0 && (
                                 <span className="whitespace-nowrap text-[10px] leading-none text-slate-400">
                                   {day.freeCount} св.
                                 </span>
@@ -729,11 +736,11 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
 
                 <section className="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                   <h2 className="mb-4 text-lg font-bold">Статус слотов</h2>
-                  {week && selectedDay && (
+                  {monthGrid && selectedDay && (
                     // время слота — только начало: контракт тестов (точный текст
                     // «10:00»), на макете docs/idea показан диапазон
                     <ul aria-label="Слоты" className="space-y-2">
-                      {week.days
+                      {monthGrid.days
                         .find((d) => d.date === selectedDay)
                         ?.slots.map((slot) => (
                           <li key={slot.start}>

@@ -116,7 +116,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Слоты недели для гостя. Считаются на лету для даты, попадающей в нужную неделю. При наличии событий админа нарезаются ими с шагом durationMinutes. */
+        /** @description Слоты месяца для гостя. Считаются на лету для месяца, в который попадает дата. При наличии событий админа нарезаются ими с шагом durationMinutes. */
         get: operations["listSlots"];
         put?: never;
         post?: never;
@@ -204,7 +204,7 @@ export interface components {
             /** @description Комментарий гостя (необязательно) */
             comment?: string;
         };
-        /** @description Один день недели со слотами. */
+        /** @description Один день сетки месяца со слотами. */
         DaySlots: {
             /**
              * Format: date
@@ -258,7 +258,17 @@ export interface components {
              */
             durationMinutes: 15 | 30 | 45 | 60;
         };
-        /** @description Слот недели. Время хранится в UTC; отображение — UTC+3. */
+        /** @description Месяц бронирования: сетка 6×7 пн–вс (42 дня). */
+        MonthSlots: {
+            /**
+             * Format: date
+             * @description Первый день месяца (YYYY-MM-DD)
+             */
+            month: string;
+            /** @description Дни сетки: 42 дня пн–вс, с понедельника недели, в которую попадает 1-е число */
+            days: components["schemas"]["DaySlots"][];
+        };
+        /** @description Слот. Время хранится в UTC; отображение — UTC+3. */
         Slot: {
             /**
              * Format: date-time
@@ -290,16 +300,6 @@ export interface components {
             slotStart: string;
             /** @description Название типа встречи */
             meetingTypeName: string;
-        };
-        /** @description Неделя бронирования: пн–вс. */
-        WeekSlots: {
-            /**
-             * Format: date
-             * @description Понедельник недели (YYYY-MM-DD)
-             */
-            weekStart: string;
-            /** @description Дни недели, пн–вс */
-            days: components["schemas"]["DaySlots"][];
         };
     };
     responses: never;
@@ -526,7 +526,7 @@ export interface operations {
     listSlots: {
         parameters: {
             query: {
-                /** @description Любая дата недели (YYYY-MM-DD) */
+                /** @description Любая дата месяца (YYYY-MM-DD) */
                 date: string;
                 /** @description Длительность выбранного типа встречи для нарезки событий админа; без параметра — 15 */
                 durationMinutes?: 15 | 30 | 45 | 60;
@@ -543,7 +543,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WeekSlots"];
+                    "application/json": components["schemas"]["MonthSlots"];
                 };
             };
         };

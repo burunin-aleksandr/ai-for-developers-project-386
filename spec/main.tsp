@@ -153,7 +153,7 @@ model UpcomingBooking {
   meetingTypeName: string;
 }
 
-/** Слот недели. Время хранится в UTC; отображение — UTC+3. */
+/** Слот. Время хранится в UTC; отображение — UTC+3. */
 model Slot {
   @doc("Начало слота (UTC)")
   start: utcDateTime;
@@ -165,7 +165,7 @@ model Slot {
   status: SlotStatus;
 }
 
-/** Один день недели со слотами. */
+/** Один день сетки месяца со слотами. */
 model DaySlots {
   @doc("Дата дня (YYYY-MM-DD)")
   date: plainDate;
@@ -177,25 +177,25 @@ model DaySlots {
   slots: Slot[];
 }
 
-/** Неделя бронирования: пн–вс. */
-model WeekSlots {
-  @doc("Понедельник недели (YYYY-MM-DD)")
-  weekStart: plainDate;
+/** Месяц бронирования: сетка 6×7 пн–вс (42 дня). */
+model MonthSlots {
+  @doc("Первый день месяца (YYYY-MM-DD)")
+  month: plainDate;
 
-  @doc("Дни недели, пн–вс")
+  @doc("Дни сетки: 42 дня пн–вс, с понедельника недели, в которую попадает 1-е число")
   days: DaySlots[];
 }
 
 @get
 @route("/slots")
-@doc("Слоты недели для гостя. Считаются на лету для даты, попадающей в нужную неделю. При наличии событий админа нарезаются ими с шагом durationMinutes.")
+@doc("Слоты месяца для гостя. Считаются на лету для месяца, в который попадает дата. При наличии событий админа нарезаются ими с шагом durationMinutes.")
 op listSlots(
-  @doc("Любая дата недели (YYYY-MM-DD)")
+  @doc("Любая дата месяца (YYYY-MM-DD)")
   @query date: plainDate,
   @doc("Длительность выбранного типа встречи для нарезки событий админа; без параметра — 15")
   @query durationMinutes?: DurationMinutes,
 ): {
-  @body body: WeekSlots;
+  @body body: MonthSlots;
 };
 
 @get

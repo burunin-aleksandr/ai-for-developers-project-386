@@ -12,8 +12,9 @@ export type DaySlots = {
   slots: Slot[];
 };
 
-export type WeekSlots = {
-  weekStart: string;
+export type MonthSlots = {
+  /** Первый день месяца (YYYY-MM-DD). */
+  month: string;
   days: DaySlots[];
 };
 
@@ -37,6 +38,11 @@ export function mondayOf(date: string): Date {
   const offsetToMonday = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - offsetToMonday);
   return d;
+}
+
+/** Первый день месяца, в который попадает дата (в UTC). */
+function monthStartOf(date: string): string {
+  return `${date.slice(0, 7)}-01`;
 }
 
 function formatDate(d: Date): string {
@@ -81,7 +87,7 @@ export function isWithinBookingWindow(
   );
 }
 
-type WeekSlotsOptions = {
+type MonthSlotsOptions = {
   /** События админа; когда есть — дефолтная сетка не строится. */
   events?: TimeRange[];
   /** Шаг нарезки событий (длительность выбранного типа встречи). */
@@ -93,21 +99,23 @@ type WeekSlotsOptions = {
 };
 
 /**
- * Считает слоты недели на лету.
+ * Считает слоты месяца на лету: сетка 42 дня (6×7 пн–вс), начиная с
+ * понедельника недели, в которую попадает 1-е число месяца.
  * Хранение в UTC, отображение в UTC+3: 10:00–18:00 UTC+3 = 07:00–15:00 UTC.
  * Есть события админа — слоты нарезаются только из них с шагом durationMinutes;
  * иначе — дефолтная 15-минутная сетка. Прошедшее время отсекается по `now`.
  */
-export function weekSlots(
+export function monthSlots(
   date: string,
   {
     events,
     durationMinutes,
     busyIntervals,
     now = new Date(),
-  }: WeekSlotsOptions = {},
-): WeekSlots {
-  const weekStart = mondayOf(date);
+  }: MonthSlotsOptions = {},
+): MonthSlots {
+  const month = monthStartOf(date);
+  const gridStart = mondayOf(month);
   const days: DaySlots[] = [];
   const step = durationMinutes ?? SLOT_STEP_MINUTES;
 
@@ -121,8 +129,8 @@ export function weekSlots(
     return busy ? "busy" : "free";
   };
 
-  for (let i = 0; i < 7; i++) {
-    const day = new Date(weekStart);
+  for (let i = 0; i < 42; i++) {
+    const day = new Date(gridStart);
     day.setUTCDate(day.getUTCDate() + i);
     const dateStr = formatDate(day);
 
@@ -182,7 +190,7 @@ export function weekSlots(
     });
   }
 
-  return { weekStart: formatDate(weekStart), days };
+  return { month, days };
 }
 
 /** Валидирует query-параметр даты. */
@@ -193,7 +201,7 @@ export function isValidDate(value: unknown): value is string {
 }
 
 /**
- * Существует ли слот с таким началом в указанной неделе
+ * Существует ли слот с таким началом в сетке месяца даты
  * (с учётом событий админа) — бронируется только целый слот.
  */
 export function isExistingSlotStart(
@@ -207,8 +215,8 @@ export function isExistingSlotStart(
   const start = new Date(slotStartIso);
   if (Number.isNaN(start.getTime())) return false;
 
-  const week = weekSlots(formatDate(start), { events, durationMinutes, now });
-  return week.days.some((day) =>
+  const grid = monthSlots(formatDate(start), { events, durationMinutes, now });
+  return grid.days.some((day) =>
     day.slots.some((slot) => slot.start === start.toISOString()),
   );
 }

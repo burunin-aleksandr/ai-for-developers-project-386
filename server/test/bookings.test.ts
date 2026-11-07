@@ -228,10 +228,9 @@ describe("HTTP API seam: бронирование", () => {
     const byStart = Object.fromEntries(
       grid
         .json()
-        .days[0].slots.map((s: { start: string; status: string }) => [
-          s.start,
-          s.status,
-        ]),
+        .days.find((d: { date: string }) => d.date === monday)!.slots.map(
+          (s: { start: string; status: string }) => [s.start, s.status],
+        ),
     );
     expect(byStart[`${monday}T07:00:00.000Z`]).toBe("busy");
     expect(byStart[`${monday}T07:45:00.000Z`]).toBe("busy");
