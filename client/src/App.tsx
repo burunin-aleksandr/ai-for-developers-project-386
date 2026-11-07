@@ -31,18 +31,112 @@ const STATUS_LABELS: Record<Slot["status"], string> = {
 
 // общие стили (Tailwind) — визуальный слой, на разметку и доступные имена не влияет
 const BTN_PRIMARY =
-  "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700";
+  "rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50";
 const BTN_SECONDARY =
-  "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
+  "rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
 const INPUT =
-  "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none";
+  "mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm shadow-sm focus:border-orange-500 focus:outline-none";
 const LABEL = "block text-sm font-medium";
-const CARD = "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
+const CARD =
+  "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm";
 const ROW =
-  "flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm";
-const ALERT_ERROR =
-  "rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700";
+  "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm";
+const ALERT_ERROR = "rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700";
 const SECTION_TITLE = "text-lg font-semibold text-slate-900";
+const INFO_BOX = "rounded-xl bg-slate-100 px-4 py-3";
+
+/** Русский месяц и год для заголовка календаря («ноябрь 2026 г.»). */
+function monthLabel(iso: string): string {
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  const month = new Intl.DateTimeFormat("ru-RU", {
+    month: "long",
+    timeZone: "UTC",
+  }).format(d);
+  return `${month} ${d.getUTCFullYear()} г.`;
+}
+
+const NAV_ACTIVE =
+  "rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 transition";
+const NAV_IDLE =
+  "rounded-lg px-4 py-2 text-sm text-slate-500 transition hover:text-slate-900";
+
+/** Аватар и имя хоста (макет docs/idea; имя по GLOSSARY — «admin»). */
+function HostBadge({ size = "lg" }: { size?: "lg" | "sm" }) {
+  const box =
+    size === "lg"
+      ? "h-14 w-14 rounded-2xl text-3xl"
+      : "h-11 w-11 rounded-xl text-xl";
+  const name = size === "lg" ? "font-bold" : "text-sm font-bold";
+  const role = size === "lg" ? "text-sm text-slate-500" : "text-xs text-slate-500";
+  return (
+    <div className="flex items-center gap-3">
+      <span
+        aria-hidden="true"
+        className={`flex items-center justify-center bg-[linear-gradient(135deg,#fed7aa,#99f6e4)] ${box}`}
+      >
+        🥚
+      </span>
+      <div>
+        <p className={name}>admin</p>
+        <p className={role}>Хост</p>
+      </div>
+    </div>
+  );
+}
+
+/** Русская локальная дата для панели «Информация» («суббота, 28 ноября»). */
+function ruDate(iso: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(new Date(`${iso}T00:00:00.000Z`));
+}
+
+/** Плавная прокрутка к списку типов по кнопке «Записаться →» на лендинге. */
+function scrollToTypes() {
+  document
+    .getElementById("types")
+    ?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
+
+/** Баннер лендинга (макет docs/idea): пилюля, заголовок, карточка «Возможности». */
+function Hero() {
+  return (
+    <div className="mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm bg-[linear-gradient(100deg,#dbeafe_0%,#ffffff_50%,#ffedd5_100%)]">
+      <div className="grid gap-8 p-8 md:grid-cols-2 md:p-10">
+        <div className="flex flex-col items-center justify-center gap-4 md:items-start">
+          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold tracking-wide text-slate-600 shadow-sm">
+            БЫСТРАЯ ЗАПИСЬ НА ЗВОНОК
+          </span>
+          <h1 className="text-4xl font-extrabold tracking-tight">Calendar</h1>
+          <p className="max-w-md text-slate-600">
+            Забронируйте встречу за минуту: выберите тип события и удобное
+            время.
+          </p>
+          <button type="button" onClick={scrollToTypes} className={BTN_PRIMARY}>
+            Записаться →
+          </button>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-bold">Возможности</h2>
+          <ul className="space-y-3 text-sm text-slate-600">
+            <li>• Выбор типа события и удобного времени для встречи.</li>
+            <li>
+              • Быстрое бронирование с подтверждением и дополнительными
+              заметками.
+            </li>
+            <li>
+              • Управление типами встреч и просмотр предстоящих записей в
+              админке.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   const [view, setView] = useState<View>("booking");
@@ -277,327 +371,437 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-900">
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-4 shadow-sm">
-        <h1 className="text-xl font-bold tracking-tight">Calendar</h1>
-        <nav className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setView("booking")}
-            aria-current={view === "booking" ? "page" : undefined}
-            className={
-              view === "booking"
-                ? "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
-                : "rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-            }
-          >
-            Записаться
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("admin")}
-            aria-current={view === "admin" ? "page" : undefined}
-            className={
-              view === "admin"
-                ? "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
-                : "rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-            }
-          >
-            Админка
-          </button>
-        </nav>
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-3">
+          <span className="flex items-center gap-2">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              className="h-6 w-6 text-orange-500"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <path d="M16 2v4M8 2v4M3 10h18" />
+            </svg>
+            <span className="text-base font-bold tracking-tight">Calendar</span>
+          </span>
+          <nav className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setView("booking")}
+              aria-current={view === "booking" ? "page" : undefined}
+              className={view === "booking" ? NAV_ACTIVE : NAV_IDLE}
+            >
+              Записаться
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("admin")}
+              aria-current={view === "admin" ? "page" : undefined}
+              className={view === "admin" ? NAV_ACTIVE : NAV_IDLE}
+            >
+              Админка
+            </button>
+          </nav>
+        </div>
       </header>
 
       {view === "booking" ? (
         <section aria-label="Записаться" className="mx-auto max-w-3xl px-6 py-8">
+          {/* баннер лендинга — пока тип не выбран (макет docs/idea) */}
+          {!selectedType && <Hero />}
           {meetingTypes.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+            <p className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
               Типы встреч не созданы
             </p>
-          ) : selectedType ? (
-            <div className="space-y-6">
-              <div className="flex flex-wrap items-center gap-4">
-                <h2 className="text-2xl font-semibold">{selectedType.name}</h2>
-                <button
-                  type="button"
-                  onClick={() => setSelectedType(null)}
-                  className={BTN_SECONDARY}
-                >
-                  К списку типов
-                </button>
-              </div>
-
-              <nav
-                aria-label="Неделя"
-                className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+          ) : !selectedType ? (
+            <>
+              <div
+                id="types"
+                className="mb-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm"
               >
-                <button
-                  type="button"
-                  onClick={() => setWeekDate((d) => plusDays(d, -7))}
-                  className="rounded-lg px-3 py-1 text-lg text-slate-600 hover:bg-slate-100"
-                >
-                  ←
-                </button>
-                <span className="font-medium tabular-nums">
-                  {week
-                    ? `${fmtDate(week.weekStart)} — ${fmtDate(
-                        plusDays(week.weekStart, 6),
-                      )}`
-                    : "Загрузка…"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setWeekDate((d) => plusDays(d, 7))}
-                  className="rounded-lg px-3 py-1 text-lg text-slate-600 hover:bg-slate-100"
-                >
-                  →
-                </button>
-              </nav>
-
-              {week && (
-                <ul
-                  aria-label="Дни недели"
-                  className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7"
-                >
-                  {week.days.map((day) => (
-                    <li key={day.date}>
-                      <button
-                        type="button"
-                        aria-pressed={selectedDay === day.date}
-                        onClick={() => setSelectedDay(day.date)}
-                        className={`flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition ${
-                          selectedDay === day.date
-                            ? "border-blue-600 bg-blue-50"
-                            : "border-slate-200 bg-white hover:border-blue-300"
-                        }`}
-                      >
-                        <span className="text-sm font-medium tabular-nums">
-                          {fmtDate(day.date)}
-                        </span>
-                        <span
-                          className={`text-xs ${
-                            day.freeCount > 0
-                              ? "text-emerald-600"
-                              : "text-slate-500"
-                          }`}
-                        >
-                          Свободно: {day.freeCount}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {week && selectedDay && (
-                <ul
-                  aria-label="Слоты"
-                  className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
-                >
-                  {week.days
-                    .find((d) => d.date === selectedDay)
-                    ?.slots.map((slot) => (
-                      <li key={slot.start}>
-                        <button
-                          type="button"
-                          disabled={slot.status === "busy"}
-                          aria-pressed={selectedSlot?.start === slot.start}
-                          onClick={() => {
-                            setSelectedSlot(slot);
-                            setBookingStep("idle");
-                            setBookingError(null);
-                          }}
-                          className={`flex w-full flex-col gap-1 rounded-lg border p-2 text-left transition ${
-                            slot.status === "busy"
-                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600"
-                              : selectedSlot?.start === slot.start
-                                ? "border-blue-600 bg-blue-50"
-                                : "border-slate-200 bg-white hover:border-blue-300"
-                          }`}
-                        >
-                          <span className="text-sm font-medium tabular-nums">
-                            {fmtTime(slot.start)}
-                          </span>
-                          <span
-                            className={`text-xs ${
-                              slot.status === "busy"
-                                ? "text-slate-600"
-                                : "text-emerald-600"
-                            }`}
-                          >
-                            {STATUS_LABELS[slot.status]}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              )}
-
-              {/* сообщение о занятости после 409 — гость снова выбирает слот */}
-              {bookingStep === "idle" && !selectedSlot && bookingError && (
-                <p
-                  role="alert"
-                  className={`mt-3 ${ALERT_ERROR}`}
-                >
-                  {bookingError}
+                <div className="mb-6">
+                  <HostBadge />
+                </div>
+                <h2 className="text-3xl font-bold tracking-tight">
+                  Выберите тип события
+                </h2>
+                <p className="mt-2 text-slate-500">
+                  Нажмите на карточку, чтобы открыть календарь и выбрать
+                  удобный слот.
                 </p>
-              )}
-
-              {selectedSlot && bookingStep === "idle" && (
-                <section
-                  aria-label="Выбранный слот"
-                  className="rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm"
-                >
-                  <dl className="mb-4 space-y-2 text-sm">
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-600">Выбранная дата</dt>
-                      <dd className="font-semibold tabular-nums">
-                        {fmtDate(selectedSlot.start.slice(0, 10))}
-                      </dd>
+              </div>
+              <ul className="grid gap-5 sm:grid-cols-2">
+                {meetingTypes.map((t) => (
+                  <li
+                    key={t.id}
+                    className="relative rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-orange-300 hover:shadow-md"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="text-lg font-bold">{t.name}</h3>
+                      <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                        {t.durationMinutes} мин
+                      </span>
                     </div>
-                    <div className="flex justify-between gap-4">
-                      <dt className="text-slate-600">Выбранное время</dt>
-                      <dd className="font-semibold tabular-nums">
-                        {fmtTime(selectedSlot.start)}
-                      </dd>
-                    </div>
-                  </dl>
+                    {t.description && (
+                      <p className="mt-2 text-sm text-slate-500">
+                        {t.description}
+                      </p>
+                    )}
+                    {/* весь клик по карточке — доступное имя «Выбрать» сохраняется */}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedType(t)}
+                      className="absolute inset-0 rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
+                    >
+                      <span className="sr-only">Выбрать</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : selectedSlot && bookingStep === "form" ? (
+            <div className="mx-auto max-w-lg">
+              <form
+                aria-label="Форма записи"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submitBooking();
+                }}
+                className={`${CARD} space-y-4`}
+              >
+                <div>
+                  <h1 className="text-2xl font-bold">{selectedType.name}</h1>
+                  <p className="mt-1 text-sm tabular-nums text-slate-500">
+                    {fmtDate(selectedSlot.start.slice(0, 10))} ·{" "}
+                    {fmtTime(selectedSlot.start)} - {fmtTime(selectedSlot.end)}
+                  </p>
+                </div>
+                <label className={LABEL}>
+                  Имя
+                  <input
+                    value={bookingForm.name}
+                    onChange={(e) =>
+                      setBookingForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                    className={INPUT}
+                  />
+                </label>
+                <label className={LABEL}>
+                  Email
+                  <input
+                    type="email"
+                    value={bookingForm.email}
+                    onChange={(e) =>
+                      setBookingForm((f) => ({
+                        ...f,
+                        email: e.target.value,
+                      }))
+                    }
+                    className={INPUT}
+                  />
+                </label>
+                <label className={LABEL}>
+                  Комментарий
+                  <input
+                    value={bookingForm.comment}
+                    onChange={(e) =>
+                      setBookingForm((f) => ({
+                        ...f,
+                        comment: e.target.value,
+                      }))
+                    }
+                    className={INPUT}
+                  />
+                </label>
+                <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => setBookingStep("form")}
-                    className={BTN_PRIMARY}
+                    onClick={() => setBookingStep("idle")}
+                    className={`flex-1 ${BTN_SECONDARY}`}
                   >
-                    Продолжить
+                    Назад
                   </button>
-                </section>
-              )}
-
-              {selectedSlot && bookingStep === "form" && (
-                <form
-                  aria-label="Форма записи"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void submitBooking();
-                  }}
-                  className={`${CARD} space-y-4`}
-                >
-                  <label className={LABEL}>
-                    Имя
-                    <input
-                      value={bookingForm.name}
-                      onChange={(e) =>
-                        setBookingForm((f) => ({ ...f, name: e.target.value }))
-                      }
-                      className={INPUT}
-                    />
-                  </label>
-                  <label className={LABEL}>
-                    Email
-                    <input
-                      type="email"
-                      value={bookingForm.email}
-                      onChange={(e) =>
-                        setBookingForm((f) => ({
-                          ...f,
-                          email: e.target.value,
-                        }))
-                      }
-                      className={INPUT}
-                    />
-                  </label>
-                  <label className={LABEL}>
-                    Комментарий
-                    <input
-                      value={bookingForm.comment}
-                      onChange={(e) =>
-                        setBookingForm((f) => ({
-                          ...f,
-                          comment: e.target.value,
-                        }))
-                      }
-                      className={INPUT}
-                    />
-                  </label>
-                  <button type="submit" className={BTN_PRIMARY}>
+                  <button type="submit" className={`flex-1 ${BTN_PRIMARY}`}>
                     Записаться
                   </button>
-                  {bookingError && (
-                    <p
-                      role="alert"
-                      className={ALERT_ERROR}
+                </div>
+                {bookingError && (
+                  <p role="alert" className={ALERT_ERROR}>
+                    {bookingError}
+                  </p>
+                )}
+              </form>
+            </div>
+          ) : selectedSlot && bookingStep === "success" ? (
+            <div className="mx-auto max-w-lg">
+              <section aria-label="Успех" className={`${CARD} text-center`}>
+                <p className="text-2xl font-bold text-orange-600">
+                  Вы записаны
+                </p>
+                <dl className="mt-4 space-y-1 text-sm text-slate-700">
+                  <div>
+                    <dt className="inline text-slate-500">Тип: </dt>
+                    <dd className="inline font-semibold">
+                      {selectedType.name}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline text-slate-500">Дата: </dt>
+                    <dd className="inline font-semibold tabular-nums">
+                      {fmtDate(selectedSlot.start.slice(0, 10))}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline text-slate-500">Время: </dt>
+                    <dd className="inline font-semibold tabular-nums">
+                      {fmtTime(selectedSlot.start)} - {fmtTime(selectedSlot.end)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline text-slate-500">
+                      Длительность:{" "}
+                    </dt>
+                    <dd className="inline font-semibold">
+                      {selectedType.durationMinutes} мин
+                    </dd>
+                  </div>
+                </dl>
+                <button
+                  type="button"
+                  onClick={resetBooking}
+                  className={`mt-5 ${BTN_PRIMARY}`}
+                >
+                  К календарю
+                </button>
+              </section>
+            </div>
+          ) : (
+            <div>
+              <h1 className="mb-6 text-3xl font-bold tracking-tight">
+                {selectedType.name}
+              </h1>
+              <div className="grid gap-5 lg:grid-cols-3">
+                <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h2 className="mb-4 text-lg font-bold">Информация</h2>
+                  <div className="mb-4">
+                    <HostBadge size="sm" />
+                  </div>
+                  <p className="font-bold">{selectedType.name}</p>
+                  <span className="mt-1 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                    {selectedType.durationMinutes} мин
+                  </span>
+                  {selectedType.description && (
+                    <p className="mt-2 text-sm text-slate-500">
+                      {selectedType.description}
+                    </p>
+                  )}
+                  <section
+                    aria-label="Выбранный слот"
+                    className="mt-4 space-y-3"
+                  >
+                    <div className={INFO_BOX}>
+                      <p className="text-sm text-slate-500">Выбранная дата</p>
+                      <p className="mt-0.5 font-semibold">
+                        {selectedDay
+                          ? ruDate(selectedDay)
+                          : "Дата не выбрана"}
+                      </p>
+                    </div>
+                    <div className={INFO_BOX}>
+                      <p className="text-sm text-slate-500">Выбранное время</p>
+                      <p className="mt-0.5 font-semibold tabular-nums">
+                        {selectedSlot
+                          ? `${fmtTime(selectedSlot.start)} - ${fmtTime(selectedSlot.end)}`
+                          : "Время не выбрано"}
+                      </p>
+                    </div>
+                    <div className={INFO_BOX}>
+                      <p className="text-sm text-slate-500">Свободно</p>
+                      <p className="mt-0.5 font-semibold tabular-nums">
+                        {week?.days.find((d) => d.date === selectedDay)
+                          ?.freeCount ?? 0}
+                      </p>
+                    </div>
+                    <div className={INFO_BOX}>
+                      {/* подпись как на макете docs/idea */}
+                      <p className="text-sm text-slate-500">
+                        Длительности в день
+                      </p>
+                      <p className="mt-0.5 font-semibold">
+                        {selectedType.durationMinutes} мин
+                      </p>
+                    </div>
+                  </section>
+                </section>
+
+                <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h2 className="text-lg font-bold">Календарь</h2>
+                    <nav aria-label="Неделя" className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setWeekDate((d) => plusDays(d, -7))}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                      >
+                        ←
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWeekDate((d) => plusDays(d, 7))}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+                      >
+                        →
+                      </button>
+                    </nav>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-700">
+                    {week ? monthLabel(week.weekStart) : "Загрузка…"}
+                  </p>
+                  {/* метка недели — контракт тестов (точный формат) */}
+                  <p className="text-xs tabular-nums text-slate-500">
+                    {week
+                      ? `${fmtDate(week.weekStart)} — ${fmtDate(
+                          plusDays(week.weekStart, 6),
+                        )}`
+                      : "Загрузка…"}
+                  </p>
+                  <div className="mb-2 mt-4 grid grid-cols-7 gap-1.5 text-center text-xs font-medium text-slate-500">
+                    <span>Пн</span>
+                    <span>Вт</span>
+                    <span>Ср</span>
+                    <span>Чт</span>
+                    <span>Пт</span>
+                    <span>Сб</span>
+                    <span>Вс</span>
+                  </div>
+                  {week && (
+                    <ul
+                      aria-label="Дни недели"
+                      className="grid grid-cols-7 gap-1.5"
                     >
+                      {week.days.map((day) => {
+                        const isSelected = selectedDay === day.date;
+                        const inMonth =
+                          day.date.slice(0, 7) === week.weekStart.slice(0, 7);
+                        return (
+                          <li key={day.date}>
+                            <button
+                              type="button"
+                              aria-pressed={isSelected}
+                              onClick={() => setSelectedDay(day.date)}
+                              className={`flex w-full flex-col items-center gap-0.5 rounded-xl border px-1 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                                isSelected
+                                  ? "border-orange-500 bg-orange-50"
+                                  : "border-slate-100 bg-slate-50 hover:border-orange-300"
+                              }`}
+                            >
+                              <span
+                                className={`text-sm font-semibold tabular-nums ${
+                                  inMonth ? "text-slate-700" : "text-slate-300"
+                                }`}
+                              >
+                                {Number(day.date.slice(8, 10))}
+                              </span>
+                              {inMonth && day.freeCount > 0 && (
+                                <span className="text-[10px] leading-none text-slate-400">
+                                  {day.freeCount} св.
+                                </span>
+                              )}
+                              <span className="sr-only">
+                                {fmtDate(day.date)}
+                              </span>
+                              <span className="sr-only">
+                                Свободно: {day.freeCount}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+
+                <section className="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <h2 className="mb-4 text-lg font-bold">Статус слотов</h2>
+                  {week && selectedDay && (
+                    // время слота — только начало: контракт тестов (точный текст
+                    // «10:00»), на макете docs/idea показан диапазон
+                    <ul aria-label="Слоты" className="space-y-2">
+                      {week.days
+                        .find((d) => d.date === selectedDay)
+                        ?.slots.map((slot) => (
+                          <li key={slot.start}>
+                            <button
+                              type="button"
+                              disabled={slot.status === "busy"}
+                              aria-pressed={selectedSlot?.start === slot.start}
+                              onClick={() => {
+                                setSelectedSlot(slot);
+                                setBookingStep("idle");
+                                setBookingError(null);
+                              }}
+                              className={`flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                                slot.status === "busy"
+                                  ? "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-500"
+                                  : selectedSlot?.start === slot.start
+                                    ? "border-orange-500 bg-orange-50"
+                                    : "border-slate-200 bg-white hover:border-orange-300"
+                              }`}
+                            >
+                              <span className="font-medium tabular-nums">
+                                {fmtTime(slot.start)}
+                              </span>
+                              <span
+                                className={`text-xs font-semibold ${
+                                  slot.status === "busy"
+                                    ? "text-slate-500"
+                                    : "text-slate-900"
+                                }`}
+                              >
+                                {STATUS_LABELS[slot.status]}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+
+                  {/* сообщение о занятости после 409 — гость снова выбирает слот */}
+                  {bookingStep === "idle" && !selectedSlot && bookingError && (
+                    <p role="alert" className={`mt-4 ${ALERT_ERROR}`}>
                       {bookingError}
                     </p>
                   )}
-                </form>
-              )}
 
-              {bookingStep === "success" && selectedSlot && (
-                <section
-                  aria-label="Успех"
-                  className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm"
-                >
-                  <p className="mb-4 text-lg font-semibold text-emerald-800">
-                    Вы записаны
-                  </p>
-                  <dl className="mb-5 space-y-1 text-sm text-slate-700">
-                    <div>
-                      <dt className="inline text-slate-500">Тип: </dt>
-                      <dd className="inline font-semibold">
-                        {selectedType.name}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="inline text-slate-500">Дата: </dt>
-                      <dd className="inline font-semibold tabular-nums">
-                        {fmtDate(selectedSlot.start.slice(0, 10))}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="inline text-slate-500">Время: </dt>
-                      <dd className="inline font-semibold tabular-nums">
-                        {fmtTime(selectedSlot.start)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="inline text-slate-500">
-                        Длительность:{" "}
-                      </dt>
-                      <dd className="inline font-semibold">
-                        {selectedType.durationMinutes} мин
-                      </dd>
-                    </div>
-                  </dl>
-                  <button type="button" onClick={resetBooking} className={BTN_PRIMARY}>
-                    К календарю
-                  </button>
+                  <div className="mt-auto flex gap-3 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetBooking();
+                        setSelectedType(null);
+                      }}
+                      className={`flex-1 ${BTN_SECONDARY}`}
+                    >
+                      Назад
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!selectedSlot}
+                      onClick={() => setBookingStep("form")}
+                      className={`flex-1 ${BTN_PRIMARY}`}
+                    >
+                      Продолжить
+                    </button>
+                  </div>
                 </section>
-              )}
+              </div>
             </div>
-          ) : (
-            <ul className="grid gap-4 sm:grid-cols-2">
-              {meetingTypes.map((t) => (
-                <li
-                  key={t.id}
-                  className={`${CARD} flex flex-col gap-2`}
-                >
-                  <h2 className="text-lg font-semibold">{t.name}</h2>
-                  {t.description && (
-                    <p className="text-sm text-slate-500">{t.description}</p>
-                  )}
-                  <span className="text-sm text-slate-600">
-                    {t.durationMinutes} мин
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedType(t)}
-                    className={`mt-auto ${BTN_PRIMARY}`}
-                  >
-                    Выбрать
-                  </button>
-                </li>
-              ))}
-            </ul>
           )}
         </section>
       ) : (
