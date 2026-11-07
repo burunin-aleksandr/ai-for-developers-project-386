@@ -29,6 +29,21 @@ const STATUS_LABELS: Record<Slot["status"], string> = {
   busy: "Занято",
 };
 
+// общие стили (Tailwind) — визуальный слой, на разметку и доступные имена не влияет
+const BTN_PRIMARY =
+  "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700";
+const BTN_SECONDARY =
+  "rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50";
+const INPUT =
+  "mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none";
+const LABEL = "block text-sm font-medium";
+const CARD = "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
+const ROW =
+  "flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm";
+const ALERT_ERROR =
+  "rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700";
+const SECTION_TITLE = "text-lg font-semibold text-slate-900";
+
 export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   const [view, setView] = useState<View>("booking");
   const [meetingTypes, setMeetingTypes] = useState<MeetingType[]>([]);
@@ -262,14 +277,19 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
   }
 
   return (
-    <main>
-      <header>
-        <h1>Calendar</h1>
-        <nav>
+    <main className="min-h-screen bg-slate-100 text-slate-900">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-4 shadow-sm">
+        <h1 className="text-xl font-bold tracking-tight">Calendar</h1>
+        <nav className="flex gap-2">
           <button
             type="button"
             onClick={() => setView("booking")}
             aria-current={view === "booking" ? "page" : undefined}
+            className={
+              view === "booking"
+                ? "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+                : "rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            }
           >
             Записаться
           </button>
@@ -277,6 +297,11 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
             type="button"
             onClick={() => setView("admin")}
             aria-current={view === "admin" ? "page" : undefined}
+            className={
+              view === "admin"
+                ? "rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white"
+                : "rounded-lg px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            }
           >
             Админка
           </button>
@@ -284,24 +309,36 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       </header>
 
       {view === "booking" ? (
-        <section aria-label="Записаться">
+        <section aria-label="Записаться" className="mx-auto max-w-3xl px-6 py-8">
           {meetingTypes.length === 0 ? (
-            <p>Типы встреч не созданы</p>
+            <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
+              Типы встреч не созданы
+            </p>
           ) : selectedType ? (
-            <div>
-              <h2>{selectedType.name}</h2>
-              <button type="button" onClick={() => setSelectedType(null)}>
-                К списку типов
-              </button>
+            <div className="space-y-6">
+              <div className="flex flex-wrap items-center gap-4">
+                <h2 className="text-2xl font-semibold">{selectedType.name}</h2>
+                <button
+                  type="button"
+                  onClick={() => setSelectedType(null)}
+                  className={BTN_SECONDARY}
+                >
+                  К списку типов
+                </button>
+              </div>
 
-              <nav aria-label="Неделя">
+              <nav
+                aria-label="Неделя"
+                className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+              >
                 <button
                   type="button"
                   onClick={() => setWeekDate((d) => plusDays(d, -7))}
+                  className="rounded-lg px-3 py-1 text-lg text-slate-600 hover:bg-slate-100"
                 >
                   ←
                 </button>
-                <span>
+                <span className="font-medium tabular-nums">
                   {week
                     ? `${fmtDate(week.weekStart)} — ${fmtDate(
                         plusDays(week.weekStart, 6),
@@ -311,22 +348,41 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                 <button
                   type="button"
                   onClick={() => setWeekDate((d) => plusDays(d, 7))}
+                  className="rounded-lg px-3 py-1 text-lg text-slate-600 hover:bg-slate-100"
                 >
                   →
                 </button>
               </nav>
 
               {week && (
-                <ul aria-label="Дни недели">
+                <ul
+                  aria-label="Дни недели"
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7"
+                >
                   {week.days.map((day) => (
                     <li key={day.date}>
                       <button
                         type="button"
                         aria-pressed={selectedDay === day.date}
                         onClick={() => setSelectedDay(day.date)}
+                        className={`flex w-full flex-col gap-1 rounded-lg border p-3 text-left transition ${
+                          selectedDay === day.date
+                            ? "border-blue-600 bg-blue-50"
+                            : "border-slate-200 bg-white hover:border-blue-300"
+                        }`}
                       >
-                        <span>{fmtDate(day.date)}</span>
-                        <span>Свободно: {day.freeCount}</span>
+                        <span className="text-sm font-medium tabular-nums">
+                          {fmtDate(day.date)}
+                        </span>
+                        <span
+                          className={`text-xs ${
+                            day.freeCount > 0
+                              ? "text-emerald-600"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          Свободно: {day.freeCount}
+                        </span>
                       </button>
                     </li>
                   ))}
@@ -334,7 +390,10 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
               )}
 
               {week && selectedDay && (
-                <ul aria-label="Слоты">
+                <ul
+                  aria-label="Слоты"
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4"
+                >
                   {week.days
                     .find((d) => d.date === selectedDay)
                     ?.slots.map((slot) => (
@@ -348,9 +407,26 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                             setBookingStep("idle");
                             setBookingError(null);
                           }}
+                          className={`flex w-full flex-col gap-1 rounded-lg border p-2 text-left transition ${
+                            slot.status === "busy"
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600"
+                              : selectedSlot?.start === slot.start
+                                ? "border-blue-600 bg-blue-50"
+                                : "border-slate-200 bg-white hover:border-blue-300"
+                          }`}
                         >
-                          <span>{fmtTime(slot.start)}</span>
-                          <span>{STATUS_LABELS[slot.status]}</span>
+                          <span className="text-sm font-medium tabular-nums">
+                            {fmtTime(slot.start)}
+                          </span>
+                          <span
+                            className={`text-xs ${
+                              slot.status === "busy"
+                                ? "text-slate-600"
+                                : "text-emerald-600"
+                            }`}
+                          >
+                            {STATUS_LABELS[slot.status]}
+                          </span>
                         </button>
                       </li>
                     ))}
@@ -359,22 +435,37 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
 
               {/* сообщение о занятости после 409 — гость снова выбирает слот */}
               {bookingStep === "idle" && !selectedSlot && bookingError && (
-                <p role="alert">{bookingError}</p>
+                <p
+                  role="alert"
+                  className={`mt-3 ${ALERT_ERROR}`}
+                >
+                  {bookingError}
+                </p>
               )}
 
               {selectedSlot && bookingStep === "idle" && (
-                <section aria-label="Выбранный слот">
-                  <p>
-                    <span>Выбранная дата</span>{" "}
-                    <strong>{fmtDate(selectedSlot.start.slice(0, 10))}</strong>
-                  </p>
-                  <p>
-                    <span>Выбранное время</span>{" "}
-                    <strong>{fmtTime(selectedSlot.start)}</strong>
-                  </p>
+                <section
+                  aria-label="Выбранный слот"
+                  className="rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm"
+                >
+                  <dl className="mb-4 space-y-2 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-600">Выбранная дата</dt>
+                      <dd className="font-semibold tabular-nums">
+                        {fmtDate(selectedSlot.start.slice(0, 10))}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-slate-600">Выбранное время</dt>
+                      <dd className="font-semibold tabular-nums">
+                        {fmtTime(selectedSlot.start)}
+                      </dd>
+                    </div>
+                  </dl>
                   <button
                     type="button"
                     onClick={() => setBookingStep("form")}
+                    className={BTN_PRIMARY}
                   >
                     Продолжить
                   </button>
@@ -388,17 +479,19 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                     e.preventDefault();
                     void submitBooking();
                   }}
+                  className={`${CARD} space-y-4`}
                 >
-                  <label>
+                  <label className={LABEL}>
                     Имя
                     <input
                       value={bookingForm.name}
                       onChange={(e) =>
                         setBookingForm((f) => ({ ...f, name: e.target.value }))
                       }
+                      className={INPUT}
                     />
                   </label>
-                  <label>
+                  <label className={LABEL}>
                     Email
                     <input
                       type="email"
@@ -409,9 +502,10 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                           email: e.target.value,
                         }))
                       }
+                      className={INPUT}
                     />
                   </label>
-                  <label>
+                  <label className={LABEL}>
                     Комментарий
                     <input
                       value={bookingForm.comment}
@@ -421,46 +515,83 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                           comment: e.target.value,
                         }))
                       }
+                      className={INPUT}
                     />
                   </label>
-                  <button type="submit">Записаться</button>
-                  {bookingError && <p role="alert">{bookingError}</p>}
+                  <button type="submit" className={BTN_PRIMARY}>
+                    Записаться
+                  </button>
+                  {bookingError && (
+                    <p
+                      role="alert"
+                      className={ALERT_ERROR}
+                    >
+                      {bookingError}
+                    </p>
+                  )}
                 </form>
               )}
 
               {bookingStep === "success" && selectedSlot && (
-                <section aria-label="Успех">
-                  <p>Вы записаны</p>
-                  <p>
-                    Тип: <strong>{selectedType.name}</strong>
+                <section
+                  aria-label="Успех"
+                  className="rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center shadow-sm"
+                >
+                  <p className="mb-4 text-lg font-semibold text-emerald-800">
+                    Вы записаны
                   </p>
-                  <p>
-                    Дата:{" "}
-                    <strong>{fmtDate(selectedSlot.start.slice(0, 10))}</strong>
-                  </p>
-                  <p>
-                    Время: <strong>{fmtTime(selectedSlot.start)}</strong>
-                  </p>
-                  <p>
-                    Длительность:{" "}
-                    <strong>{selectedType.durationMinutes} мин</strong>
-                  </p>
-                  <button type="button" onClick={resetBooking}>
+                  <dl className="mb-5 space-y-1 text-sm text-slate-700">
+                    <div>
+                      <dt className="inline text-slate-500">Тип: </dt>
+                      <dd className="inline font-semibold">
+                        {selectedType.name}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-slate-500">Дата: </dt>
+                      <dd className="inline font-semibold tabular-nums">
+                        {fmtDate(selectedSlot.start.slice(0, 10))}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-slate-500">Время: </dt>
+                      <dd className="inline font-semibold tabular-nums">
+                        {fmtTime(selectedSlot.start)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="inline text-slate-500">
+                        Длительность:{" "}
+                      </dt>
+                      <dd className="inline font-semibold">
+                        {selectedType.durationMinutes} мин
+                      </dd>
+                    </div>
+                  </dl>
+                  <button type="button" onClick={resetBooking} className={BTN_PRIMARY}>
                     К календарю
                   </button>
                 </section>
               )}
             </div>
           ) : (
-            <ul>
+            <ul className="grid gap-4 sm:grid-cols-2">
               {meetingTypes.map((t) => (
-                <li key={t.id}>
-                  <h2>{t.name}</h2>
-                  {t.description && <p>{t.description}</p>}
-                  <span>{t.durationMinutes} мин</span>
+                <li
+                  key={t.id}
+                  className={`${CARD} flex flex-col gap-2`}
+                >
+                  <h2 className="text-lg font-semibold">{t.name}</h2>
+                  {t.description && (
+                    <p className="text-sm text-slate-500">{t.description}</p>
+                  )}
+                  <span className="text-sm text-slate-600">
+                    {t.durationMinutes} мин
+                  </span>
                   <button
                     type="button"
                     onClick={() => setSelectedType(t)}
+                    className={`mt-auto ${BTN_PRIMARY}`}
                   >
                     Выбрать
                   </button>
@@ -470,7 +601,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
           )}
         </section>
       ) : (
-        <section aria-label="Админка">
+        <section aria-label="Админка" className="mx-auto max-w-3xl px-6 py-8">
           <button
             type="button"
             onClick={() => {
@@ -478,15 +609,23 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
               setForm(EMPTY_FORM);
               setFormError(null);
             }}
+            className={BTN_PRIMARY}
           >
             Создать тип встречи
           </button>
 
-          <ul>
+          <ul className="mt-4 space-y-2">
             {meetingTypes.map((t) => (
-              <li key={t.id}>
-                <h2>{t.name}</h2>
-                <span>{t.durationMinutes} мин</span>
+              <li
+                key={t.id}
+                className={ROW}
+              >
+                <div>
+                  <h2 className={SECTION_TITLE}>{t.name}</h2>
+                  <span className="text-sm text-slate-500">
+                    {t.durationMinutes} мин
+                  </span>
+                </div>
                 <button
                   type="button"
                   onClick={() => {
@@ -498,6 +637,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                       durationMinutes: t.durationMinutes,
                     });
                   }}
+                  className={BTN_SECONDARY}
                 >
                   Редактировать
                 </button>
@@ -511,17 +651,19 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                 e.preventDefault();
                 void save();
               }}
+              className={`mt-4 ${CARD} space-y-4`}
             >
-              <label>
+              <label className={LABEL}>
                 Название
                 <input
                   value={form.name}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, name: e.target.value }))
                   }
+                  className={INPUT}
                 />
               </label>
-              <label>
+              <label className={LABEL}>
                 Описание
                 <input
                   value={form.description ?? ""}
@@ -531,9 +673,10 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                       description: e.target.value || undefined,
                     }))
                   }
+                  className={INPUT}
                 />
               </label>
-              <label>
+              <label className={LABEL}>
                 Длительность
                 <select
                   value={form.durationMinutes}
@@ -547,6 +690,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                         | 60,
                     }))
                   }
+                  className={INPUT}
                 >
                   {DURATIONS.map((d) => (
                     <option key={d} value={d}>
@@ -555,29 +699,48 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                   ))}
                 </select>
               </label>
-              <button type="submit">Сохранить</button>
-              {formError && <p role="alert">{formError}</p>}
+              <button type="submit" className={BTN_PRIMARY}>
+                Сохранить
+              </button>
+              {formError && (
+                <p
+                  role="alert"
+                  className={ALERT_ERROR}
+                >
+                  {formError}
+                </p>
+              )}
             </form>
           )}
 
-          <h3>События админа</h3>
+          <h3 className={`mt-8 border-b border-slate-200 pb-2 ${SECTION_TITLE}`}>
+            События админа
+          </h3>
           <button
             type="button"
             onClick={() => {
               setEventForm({ start: "", end: "" });
               setEventError(null);
             }}
+            className={`mt-3 ${BTN_SECONDARY}`}
           >
             Создать событие
           </button>
 
-          <ul>
+          <ul className="mt-3 space-y-2">
             {adminEvents.map((e) => (
-              <li key={e.id}>
-                <span>
+              <li
+                key={e.id}
+                className={ROW}
+              >
+                <span className="text-sm font-medium tabular-nums">
                   {fmtTime(e.start)} — {fmtTime(e.end)}
                 </span>
-                <button type="button" onClick={() => void deleteEvent(e.id)}>
+                <button
+                  type="button"
+                  onClick={() => void deleteEvent(e.id)}
+                  className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50"
+                >
                   Удалить
                 </button>
               </li>
@@ -590,8 +753,9 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                 ev.preventDefault();
                 void saveEvent();
               }}
+              className={`mt-4 ${CARD} space-y-4`}
             >
-              <label>
+              <label className={LABEL}>
                 Начало
                 <input
                   type="datetime-local"
@@ -601,9 +765,10 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                       f ? { ...f, start: ev.target.value } : f,
                     )
                   }
+                  className={INPUT}
                 />
               </label>
-              <label>
+              <label className={LABEL}>
                 Конец
                 <input
                   type="datetime-local"
@@ -613,21 +778,44 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                       f ? { ...f, end: ev.target.value } : f,
                     )
                   }
+                  className={INPUT}
                 />
               </label>
-              <button type="submit">Сохранить</button>
-              {eventError && <p role="alert">{eventError}</p>}
+              <button type="submit" className={BTN_PRIMARY}>
+                Сохранить
+              </button>
+              {eventError && (
+                <p
+                  role="alert"
+                  className={ALERT_ERROR}
+                >
+                  {eventError}
+                </p>
+              )}
             </form>
           )}
 
-          <h3>Предстоящие записи</h3>
-          <ul aria-label="Предстоящие записи">
-            {upcomingBookings.length === 0 && <li>Пока нет записей</li>}
+          <h3 className={`mt-8 border-b border-slate-200 pb-2 ${SECTION_TITLE}`}>
+            Предстоящие записи
+          </h3>
+          <ul aria-label="Предстоящие записи" className="mt-3 space-y-2">
+            {upcomingBookings.length === 0 && (
+              <li className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
+                Пока нет записей
+              </li>
+            )}
             {upcomingBookings.map((b) => (
-              <li key={b.id}>
-                <span>{b.meetingTypeName}</span>
-                <span>{fmtDate(b.slotStart.slice(0, 10))}</span>
-                <span>{fmtTime(b.slotStart)}</span>
+              <li
+                key={b.id}
+                className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm"
+              >
+                <span className="font-medium">{b.meetingTypeName}</span>
+                <span className="text-sm text-slate-600 tabular-nums">
+                  {fmtDate(b.slotStart.slice(0, 10))}
+                </span>
+                <span className="text-sm text-slate-600 tabular-nums">
+                  {fmtTime(b.slotStart)}
+                </span>
               </li>
             ))}
           </ul>

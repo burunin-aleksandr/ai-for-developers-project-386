@@ -1,3 +1,4 @@
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -6,7 +7,7 @@ import { defineConfig } from "vite";
 const API_PATHS = ["/health", "/meeting-types", "/admin-events", "/slots", "/bookings"];
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   server: {
     proxy: Object.fromEntries(
       API_PATHS.map((path) => [
