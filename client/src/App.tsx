@@ -412,7 +412,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
       </header>
 
       {view === "booking" ? (
-        <section aria-label="Записаться" className="mx-auto max-w-3xl px-6 py-8">
+        <section aria-label="Записаться" className="mx-auto max-w-6xl px-6 py-8">
           {/* баннер лендинга — пока тип не выбран (макет docs/idea) */}
           {!selectedType && <Hero />}
           {meetingTypes.length === 0 ? (
@@ -695,7 +695,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                               type="button"
                               aria-pressed={isSelected}
                               onClick={() => setSelectedDay(day.date)}
-                              className={`flex w-full flex-col items-center gap-0.5 rounded-xl border px-1 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
+                              className={`flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 ${
                                 isSelected
                                   ? "border-orange-500 bg-orange-50"
                                   : "border-slate-100 bg-slate-50 hover:border-orange-300"
@@ -709,7 +709,7 @@ export default function App({ baseUrl = "" }: { baseUrl?: string }) {
                                 {Number(day.date.slice(8, 10))}
                               </span>
                               {inMonth && day.freeCount > 0 && (
-                                <span className="text-[10px] leading-none text-slate-400">
+                                <span className="whitespace-nowrap text-[10px] leading-none text-slate-400">
                                   {day.freeCount} св.
                                 </span>
                               )}
