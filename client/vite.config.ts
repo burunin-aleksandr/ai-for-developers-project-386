@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 
 // Проксируем API на Fastify (порт 3000): клиент ходит по относительным
 // путям, в dev они не должны уходить на SPA-fallback самого Vite.
-const API_PATHS = ["/health", "/meeting-types", "/admin-events", "/slots", "/bookings"];
+const API_PATHS = ["/health", "/admin-events", "/slots", "/bookings"];
 
 export default defineConfig({
   plugins: [tailwindcss(), react()],

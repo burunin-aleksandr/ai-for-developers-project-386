@@ -34,7 +34,7 @@ describe("HTTP API seam: слоты месяца", () => {
     await app.close();
   });
 
-  test("сетка месяца: 42 дня, окно 10:00–18:00 UTC+3, шаг 15 минут", async () => {
+  test("сетка месяца: 42 дня, окно 09:00–18:00 UTC+3, шаг 30 минут", async () => {
     const date = futureDate();
     const res = await app.inject({
       method: "GET",
@@ -47,15 +47,15 @@ describe("HTTP API seam: слоты месяца", () => {
 
     const day = body.days.find((d: { date: string }) => d.date === date);
     expect(day).toBeDefined();
-    expect(day.freeCount).toBe(32); // 8 часов × 4 слота в час
-    expect(day.slots).toHaveLength(32);
+    expect(day.freeCount).toBe(18); // 9 часов × 2 слота в час
+    expect(day.slots).toHaveLength(18);
 
-    // первый слот: 10:00 UTC+3 = 07:00 UTC
-    expect(day.slots[0].start).toBe(`${date}T07:00:00.000Z`);
+    // первый слот: 09:00 UTC+3 = 06:00 UTC
+    expect(day.slots[0].start).toBe(`${date}T06:00:00.000Z`);
     // последний слот заканчивается в 18:00 UTC+3 = 15:00 UTC
     expect(day.slots.at(-1).end).toBe(`${date}T15:00:00.000Z`);
-    // шаг 15 минут
-    expect(day.slots[1].start).toBe(`${date}T07:15:00.000Z`);
+    // шаг 30 минут
+    expect(day.slots[1].start).toBe(`${date}T06:30:00.000Z`);
     // все слоты свободны
     expect(
       day.slots.every((s: { status: string }) => s.status === "free"),

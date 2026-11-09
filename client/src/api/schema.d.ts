@@ -14,7 +14,7 @@ export interface paths {
         /** @description Список событий админа. */
         get: operations["listAdminEvents"];
         put?: never;
-        /** @description Создать событие админа — интервал в пределах окна бронирования 10:00–18:00 UTC+3. */
+        /** @description Создать событие админа — интервал в пределах окна бронирования 09:00–18:00 UTC+3. */
         post: operations["createAdminEvent"];
         delete?: never;
         options?: never;
@@ -32,7 +32,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** @description Удалить событие админа. Когда удалены все события, гость снова видит дефолтную сетку. */
+        /** @description Удалить событие админа. Пересекавшиеся с ним слоты снова становятся свободными. */
         delete: operations["deleteAdminEvent"];
         options?: never;
         head?: never;
@@ -46,10 +46,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Предстоящие записи для админа (демо без авторизации): тип встречи, дата и время. Только просмотр — отмена и изменение недоступны. */
+        /** @description Предстоящие записи для публичной страницы «Предстоящие события»: имя, email, слот и момент создания. */
         get: operations["listBookings"];
         put?: never;
-        /** @description Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей. Одно время нельзя занять дважды — конфликт → 409. */
+        /** @description Записать гостя на целый 30-минутный слот. Слот сразу становится «Занято» для всех гостей. Одно время нельзя занять дважды — конфликт → 409. */
         post: operations["createBooking"];
         delete?: never;
         options?: never;
@@ -74,41 +74,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/meeting-types": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Список типов встреч владельца. */
-        get: operations["listMeetingTypes"];
-        put?: never;
-        /** @description Создать тип встречи. */
-        post: operations["createMeetingType"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/meeting-types/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** @description Отредактировать тип встречи. Удаление не предусмотрено. */
-        put: operations["updateMeetingType"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/slots": {
         parameters: {
             query?: never;
@@ -116,7 +81,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Слоты месяца для гостя. Считаются на лету для месяца, в который попадает дата. При наличии событий админа нарезаются ими с шагом durationMinutes. */
+        /** @description Слоты месяца для гостя. Фиксированная сетка 09:00–18:00 UTC+3 с шагом 30 минут; события админа и записи помечают пересекающиеся слоты занятыми. */
         get: operations["listSlots"];
         put?: never;
         post?: never;
@@ -130,7 +95,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description Событие админа: интервал доступного времени поверх дефолтной сетки. */
+        /** @description Событие админа: интервал, который блокирует пересекающиеся слоты. */
         AdminEvent: {
             /**
              * Format: int64
@@ -148,7 +113,7 @@ export interface components {
              */
             end: string;
         };
-        /** @description Входные данные события админа (интервал в пределах окна 10:00–18:00 UTC+3). */
+        /** @description Входные данные события админа (интервал в пределах окна 09:00–18:00 UTC+3). */
         AdminEventInput: {
             /**
              * Format: date-time
@@ -173,36 +138,27 @@ export interface components {
              * @description Начало слота (UTC)
              */
             slotStart: string;
-            /**
-             * Format: int64
-             * @description Тип встречи, на который записался гость
-             */
-            meetingTypeId: number;
             /** @description Имя гостя */
             name: string;
             /** @description Email гостя */
             email: string;
-            /** @description Комментарий гостя */
-            comment?: string;
+            /**
+             * Format: date-time
+             * @description Момент создания записи (UTC)
+             */
+            createdAt: string;
         };
         /** @description Входные данные записи (валидируются на сервере). */
         BookingInput: {
             /**
              * Format: date-time
-             * @description Начало слота (UTC) — бронируется только целый слот
+             * @description Начало слота (UTC) — бронируется только целый 30-минутный слот
              */
             slotStart: string;
-            /**
-             * Format: int64
-             * @description Тип встречи — по его длительности нарезан сет, который видел гость
-             */
-            meetingTypeId: number;
             /** @description Имя гостя (обязательно) */
             name: string;
             /** @description Email гостя (обязательно) */
             email: string;
-            /** @description Комментарий гостя (необязательно) */
-            comment?: string;
         };
         /** @description Один день сетки месяца со слотами. */
         DaySlots: {
@@ -232,32 +188,6 @@ export interface components {
              */
             status: "ok";
         };
-        /** @description Тип встречи: карточка, которую создаёт владелец. */
-        MeetingType: {
-            /** Format: int64 */
-            id: number;
-            /** @description Название типа встречи */
-            name: string;
-            /** @description Описание типа встречи */
-            description?: string;
-            /**
-             * @description Длительность в минутах (пресет)
-             * @enum {number}
-             */
-            durationMinutes: 15 | 30 | 45 | 60;
-        };
-        /** @description Входные данные типа встречи (без id). */
-        MeetingTypeInput: {
-            /** @description Название типа встречи */
-            name: string;
-            /** @description Описание типа встречи */
-            description?: string;
-            /**
-             * @description Длительность в минутах (пресет)
-             * @enum {number}
-             */
-            durationMinutes: 15 | 30 | 45 | 60;
-        };
         /** @description Месяц бронирования: сетка 6×7 пн–вс (42 дня). */
         MonthSlots: {
             /**
@@ -285,21 +215,6 @@ export interface components {
              * @enum {string}
              */
             status: "free" | "busy";
-        };
-        /** @description Предстоящая запись для админа: только просмотр, отмена/изменение недоступны. */
-        UpcomingBooking: {
-            /**
-             * Format: int64
-             * @description Идентификатор записи
-             */
-            id: number;
-            /**
-             * Format: date-time
-             * @description Начало слота (UTC)
-             */
-            slotStart: string;
-            /** @description Название типа встречи */
-            meetingTypeName: string;
         };
     };
     responses: never;
@@ -392,7 +307,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        bookings: components["schemas"]["UpcomingBooking"][];
+                        bookings: components["schemas"]["Booking"][];
                     };
                 };
             };
@@ -451,85 +366,11 @@ export interface operations {
             };
         };
     };
-    listMeetingTypes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The request has succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        meetingTypes: components["schemas"]["MeetingType"][];
-                    };
-                };
-            };
-        };
-    };
-    createMeetingType: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MeetingTypeInput"];
-            };
-        };
-        responses: {
-            /** @description The request has succeeded and a new resource has been created as a result. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MeetingType"];
-                };
-            };
-        };
-    };
-    updateMeetingType: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MeetingTypeInput"];
-            };
-        };
-        responses: {
-            /** @description The request has succeeded. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MeetingType"];
-                };
-            };
-        };
-    };
     listSlots: {
         parameters: {
             query: {
                 /** @description Любая дата месяца (YYYY-MM-DD) */
                 date: string;
-                /** @description Длительность выбранного типа встречи для нарезки событий админа; без параметра — 15 */
-                durationMinutes?: 15 | 30 | 45 | 60;
             };
             header?: never;
             path?: never;

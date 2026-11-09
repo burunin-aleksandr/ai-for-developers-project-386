@@ -18,16 +18,17 @@ export type MonthSlots = {
   days: DaySlots[];
 };
 
-/** Интервал события админа (ISO-строки UTC). */
+/** Интервал (ISO-строки UTC). */
 export type TimeRange = {
   start: string;
   end: string;
 };
 
 /** Окно приёма в UTC+3 (захардкоженный дефолт). */
-const WINDOW_START_MINUTES = 10 * 60; // 10:00
+const WINDOW_START_MINUTES = 9 * 60; // 09:00
 const WINDOW_END_MINUTES = 18 * 60; // 18:00
-const SLOT_STEP_MINUTES = 15;
+/** Длительность слота и шаг фиксированной сетки. */
+export const SLOT_DURATION_MINUTES = 30;
 const DISPLAY_UTC_OFFSET_HOURS = 3;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -49,8 +50,17 @@ function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Минуты от полуночи в отображаемом поясе (UTC+3). */
+function displayMinutesOf(d: Date): number {
+  return (
+    d.getUTCHours() * 60 +
+    d.getUTCMinutes() +
+    DISPLAY_UTC_OFFSET_HOURS * 60
+  );
+}
+
 /**
- * Интервал лежит в окне 10:00–18:00 UTC+3 и не выходит за один день.
+ * Интервал лежит в окне 09:00–18:00 UTC+3 и не выходит за один день.
  * Возвращает true, если интервал корректен.
  */
 export function isWithinBookingWindow(
@@ -64,15 +74,8 @@ export function isWithinBookingWindow(
   }
   if (start.getTime() >= end.getTime()) return false;
 
-  // минуты от полуночи в отображаемом поясе (UTC+3)
-  const startMinutes =
-    start.getUTCHours() * 60 +
-    start.getUTCMinutes() +
-    DISPLAY_UTC_OFFSET_HOURS * 60;
-  const endMinutes =
-    end.getUTCHours() * 60 +
-    end.getUTCMinutes() +
-    DISPLAY_UTC_OFFSET_HOURS * 60;
+  const startMinutes = displayMinutesOf(start);
+  const endMinutes = displayMinutesOf(end);
 
   // конец в следующих сутках отображаемого пояса не влезает в окно одного дня
   const startDay = Math.floor(startMinutes / (24 * 60));
@@ -88,12 +91,10 @@ export function isWithinBookingWindow(
 }
 
 type MonthSlotsOptions = {
-  /** События админа; когда есть — дефолтная сетка не строится. */
+  /** События админа: слоты, пересекающиеся с ними, получают busy. */
   events?: TimeRange[];
-  /** Шаг нарезки событий (длительность выбранного типа встречи). */
-  durationMinutes?: number;
   /** Занятые интервалы записей (UTC ISO): слот, пересекающий любой из них, получает busy. */
-  busyIntervals?: Array<{ start: string; end: string }>;
+  busyIntervals?: TimeRange[];
   /** Текущий момент (для тестов). */
   now?: Date;
 };
@@ -101,30 +102,32 @@ type MonthSlotsOptions = {
 /**
  * Считает слоты месяца на лету: сетка 42 дня (6×7 пн–вс), начиная с
  * понедельника недели, в которую попадает 1-е число месяца.
- * Хранение в UTC, отображение в UTC+3: 10:00–18:00 UTC+3 = 07:00–15:00 UTC.
- * Есть события админа — слоты нарезаются только из них с шагом durationMinutes;
- * иначе — дефолтная 15-минутная сетка. Прошедшее время отсекается по `now`.
+ * Хранение в UTC, отображение в UTC+3: 09:00–18:00 UTC+3 = 06:00–15:00 UTC.
+ * Сетка всегда фиксированная: шаг 30 минут. События админа и записи
+ * помечают пересекающиеся слоты занятыми. Прошедшее время отсекается по `now`.
  */
 export function monthSlots(
   date: string,
   {
-    events,
-    durationMinutes,
-    busyIntervals,
+    events = [],
+    busyIntervals = [],
     now = new Date(),
   }: MonthSlotsOptions = {},
 ): MonthSlots {
   const month = monthStartOf(date);
   const gridStart = mondayOf(month);
   const days: DaySlots[] = [];
-  const step = durationMinutes ?? SLOT_STEP_MINUTES;
 
-  // слот занят, если пересекается с любой записью (антидубль для разных длительностей)
+  const busyRanges = [...events, ...busyIntervals].map((range) => ({
+    start: Date.parse(range.start),
+    end: Date.parse(range.end),
+  }));
+
   const statusOf = (startIso: string, endIso: string): Slot["status"] => {
     const start = Date.parse(startIso);
     const end = Date.parse(endIso);
-    const busy = busyIntervals?.some((b) =>
-      intervalsIntersect(start, end, Date.parse(b.start), Date.parse(b.end)),
+    const busy = busyRanges.some((b) =>
+      intervalsIntersect(start, end, b.start, b.end),
     );
     return busy ? "busy" : "free";
   };
@@ -133,54 +136,25 @@ export function monthSlots(
     const day = new Date(gridStart);
     day.setUTCDate(day.getUTCDate() + i);
     const dateStr = formatDate(day);
-
     const slots: Slot[] = [];
 
-    if (events && events.length > 0) {
-      const seenStarts = new Set<string>();
-      for (const event of events) {
-        const eventStart = new Date(event.start);
-        const eventEnd = new Date(event.end);
-        if (formatDate(eventStart) !== dateStr) continue;
+    for (
+      let m = WINDOW_START_MINUTES;
+      m < WINDOW_END_MINUTES;
+      m += SLOT_DURATION_MINUTES
+    ) {
+      const start = new Date(day);
+      start.setUTCMinutes(m - DISPLAY_UTC_OFFSET_HOURS * 60, 0, 0);
+      const end = new Date(start);
+      end.setUTCMinutes(start.getUTCMinutes() + SLOT_DURATION_MINUTES);
 
-        for (
-          let t = eventStart.getTime();
-          t + step * 60_000 <= eventEnd.getTime();
-          t += step * 60_000
-        ) {
-          const start = new Date(t);
-          if (start.getTime() < now.getTime()) continue;
-          // пересекающиеся события не должны давать дубликаты слотов
-          if (seenStarts.has(start.toISOString())) continue;
-          seenStarts.add(start.toISOString());
-          const end = new Date(t + step * 60_000);
-          slots.push({
-            start: start.toISOString(),
-            end: end.toISOString(),
-            status: statusOf(start.toISOString(), end.toISOString()),
-          });
-        }
-      }
-      slots.sort((a, b) => a.start.localeCompare(b.start));
-    } else {
-      for (
-        let m = WINDOW_START_MINUTES;
-        m < WINDOW_END_MINUTES;
-        m += SLOT_STEP_MINUTES
-      ) {
-        const start = new Date(day);
-        start.setUTCMinutes(m - DISPLAY_UTC_OFFSET_HOURS * 60, 0, 0);
-        const end = new Date(start);
-        end.setUTCMinutes(start.getUTCMinutes() + SLOT_STEP_MINUTES);
+      if (start.getTime() < now.getTime()) continue;
 
-        if (start.getTime() < now.getTime()) continue;
-
-        slots.push({
-          start: start.toISOString(),
-          end: end.toISOString(),
-          status: statusOf(start.toISOString(), end.toISOString()),
-        });
-      }
+      slots.push({
+        start: start.toISOString(),
+        end: end.toISOString(),
+        status: statusOf(start.toISOString(), end.toISOString()),
+      });
     }
 
     days.push({
@@ -201,22 +175,41 @@ export function isValidDate(value: unknown): value is string {
 }
 
 /**
- * Существует ли слот с таким началом в сетке месяца даты
- * (с учётом событий админа) — бронируется только целый слот.
+ * Существует ли слот с таким началом в фиксированной сетке:
+ * 30-минутная граница внутри окна 09:00–18:00 UTC+3, не в прошлом.
  */
 export function isExistingSlotStart(
   slotStartIso: string,
-  events: TimeRange[],
-  {
-    durationMinutes,
-    now,
-  }: { durationMinutes?: number; now?: Date } = {},
+  { now = new Date() }: { now?: Date } = {},
 ): boolean {
   const start = new Date(slotStartIso);
   if (Number.isNaN(start.getTime())) return false;
+  if (start.getTime() < now.getTime()) return false;
+  if (start.getUTCSeconds() !== 0 || start.getUTCMilliseconds() !== 0) {
+    return false;
+  }
 
-  const grid = monthSlots(formatDate(start), { events, durationMinutes, now });
-  return grid.days.some((day) =>
-    day.slots.some((slot) => slot.start === start.toISOString()),
+  const minutes = displayMinutesOf(start);
+  const displayDay = Math.floor(minutes / (24 * 60));
+  const utcDay = Math.floor(
+    (start.getUTCHours() * 60 + start.getUTCMinutes()) / (24 * 60),
   );
+  if (displayDay !== utcDay) return false;
+
+  const inDay = minutes % (24 * 60);
+  return (
+    inDay >= WINDOW_START_MINUTES &&
+    inDay + SLOT_DURATION_MINUTES <= WINDOW_END_MINUTES &&
+    inDay % SLOT_DURATION_MINUTES === 0
+  );
+}
+
+/** Интервал фиксированного 30-минутного слота по его началу. */
+export function slotInterval(slotStartIso: string): TimeRange | null {
+  const start = Date.parse(slotStartIso);
+  if (Number.isNaN(start)) return null;
+  return {
+    start: new Date(start).toISOString(),
+    end: new Date(start + SLOT_DURATION_MINUTES * 60_000).toISOString(),
+  };
 }

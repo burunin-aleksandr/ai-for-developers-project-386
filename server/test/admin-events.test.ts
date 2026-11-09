@@ -1,7 +1,7 @@
 import { buildApp } from "../src/app";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-/** Любой понедельник в будущем — для детерминированных проверок нарезки. */
+/** Любой понедельник в будущем — для детерминированных проверок. */
 function futureWeekMonday(): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() + 14);
@@ -26,26 +26,26 @@ describe("HTTP API seam: события админа", () => {
       method: "POST",
       url: "/admin-events",
       payload: {
-        start: "2026-11-10T07:00:00.000Z", // 10:00 UTC+3
-        end: "2026-11-10T08:00:00.000Z", // 11:00 UTC+3
+        start: "2026-11-10T06:00:00.000Z", // 09:00 UTC+3
+        end: "2026-11-10T07:00:00.000Z", // 10:00 UTC+3
       },
     });
 
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({
-      start: "2026-11-10T07:00:00.000Z",
-      end: "2026-11-10T08:00:00.000Z",
+      start: "2026-11-10T06:00:00.000Z",
+      end: "2026-11-10T07:00:00.000Z",
     });
     expect(res.json().id).toBeDefined();
   });
 
-  test("интервал вне окна 10:00–18:00 UTC+3 отклоняется", async () => {
+  test("интервал вне окна 09:00–18:00 UTC+3 отклоняется", async () => {
     const tooEarly = await app.inject({
       method: "POST",
       url: "/admin-events",
       payload: {
-        start: "2026-11-10T06:00:00.000Z", // 09:00 UTC+3 — до окна
-        end: "2026-11-10T07:00:00.000Z",
+        start: "2026-11-10T05:00:00.000Z", // 08:00 UTC+3 — до окна
+        end: "2026-11-10T06:00:00.000Z",
       },
     });
     expect(tooEarly.statusCode).toBe(400);
@@ -59,6 +59,27 @@ describe("HTTP API seam: события админа", () => {
       },
     });
     expect(tooLate.statusCode).toBe(400);
+
+    // границы окна включительно
+    const early = await app.inject({
+      method: "POST",
+      url: "/admin-events",
+      payload: {
+        start: "2026-11-10T06:00:00.000Z",
+        end: "2026-11-10T07:00:00.000Z",
+      },
+    });
+    expect(early.statusCode).toBe(201);
+
+    const late = await app.inject({
+      method: "POST",
+      url: "/admin-events",
+      payload: {
+        start: "2026-11-10T14:00:00.000Z",
+        end: "2026-11-10T15:00:00.000Z",
+      },
+    });
+    expect(late.statusCode).toBe(201);
   });
 
   test("интервал с концом раньше начала отклоняется", async () => {
@@ -79,8 +100,8 @@ describe("HTTP API seam: события админа", () => {
       method: "POST",
       url: "/admin-events",
       payload: {
-        start: "2026-11-10T07:00:00.000Z",
-        end: "2026-11-10T08:00:00.000Z",
+        start: "2026-11-10T06:00:00.000Z",
+        end: "2026-11-10T07:00:00.000Z",
       },
     });
 
@@ -97,49 +118,15 @@ describe("HTTP API seam: события админа", () => {
     expect(again.statusCode).toBe(404);
   });
 
-  test("при наличии событий слоты строятся только из них с шагом durationMinutes", async () => {
+  test("событие помечает пересекающиеся слоты занятыми, сетка остаётся полной", async () => {
     const monday = futureWeekMonday();
-    // событие 10:00–11:00 UTC+3 = 07:00–08:00 UTC
+    // событие 09:00–10:00 UTC+3 = 06:00–07:00 UTC
     await app.inject({
       method: "POST",
       url: "/admin-events",
       payload: {
-        start: `${monday}T07:00:00.000Z`,
-        end: `${monday}T08:00:00.000Z`,
-      },
-    });
-
-    const res = await app.inject({
-      method: "GET",
-      url: `/slots?date=${monday}&durationMinutes=30`,
-    });
-
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    const total = body.days.flatMap(
-      (d: { slots: unknown[] }) => d.slots,
-    );
-    expect(total).toHaveLength(2); // час события / 30 минут
-    expect(total).toMatchObject([
-      { start: `${monday}T07:00:00.000Z`, status: "free" },
-      { start: `${monday}T07:30:00.000Z`, status: "free" },
-    ]);
-    // остальные дни недели пустые — дефолтная сетка не строится
-    expect(
-      body.days
-        .filter((d: { date: string }) => d.date !== monday)
-        .every((d: { slots: unknown[] }) => d.slots.length === 0),
-    ).toBe(true);
-  });
-
-  test("без параметра durationMinutes нарезка идёт с шагом 15 минут", async () => {
-    const monday = futureWeekMonday();
-    await app.inject({
-      method: "POST",
-      url: "/admin-events",
-      payload: {
-        start: `${monday}T07:00:00.000Z`,
-        end: `${monday}T08:00:00.000Z`,
+        start: `${monday}T06:00:00.000Z`,
+        end: `${monday}T07:00:00.000Z`,
       },
     });
 
@@ -148,21 +135,31 @@ describe("HTTP API seam: события админа", () => {
       url: `/slots?date=${monday}`,
     });
 
-    const body = res.json();
-    const total = body.days.flatMap(
-      (d: { slots: unknown[] }) => d.slots,
+    expect(res.statusCode).toBe(200);
+    const day = res
+      .json()
+      .days.find((d: { date: string }) => d.date === monday);
+    expect(day.slots).toHaveLength(18); // фиксированная сетка не сужается
+
+    const byStart = Object.fromEntries(
+      day.slots.map((s: { start: string; status: string }) => [
+        s.start,
+        s.status,
+      ]),
     );
-    expect(total).toHaveLength(4); // час события / 15 минут
+    expect(byStart[`${monday}T06:00:00.000Z`]).toBe("busy");
+    expect(byStart[`${monday}T06:30:00.000Z`]).toBe("busy");
+    expect(byStart[`${monday}T07:00:00.000Z`]).toBe("free");
   });
 
-  test("после удаления всех событий возвращается дефолтная сетка", async () => {
+  test("после удаления события слоты снова свободны", async () => {
     const monday = futureWeekMonday();
     const created = await app.inject({
       method: "POST",
       url: "/admin-events",
       payload: {
-        start: `${monday}T07:00:00.000Z`,
-        end: `${monday}T08:00:00.000Z`,
+        start: `${monday}T06:00:00.000Z`,
+        end: `${monday}T07:00:00.000Z`,
       },
     });
     await app.inject({
@@ -176,30 +173,13 @@ describe("HTTP API seam: события админа", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(body.days).toHaveLength(42);
-    const day = body.days.find((d: { date: string }) => d.date === monday);
-    expect(day.slots).toHaveLength(32); // дефолтная сетка 10:00–18:00, шаг 15
-  });
-
-  test("список событий отдаёт созданные события", async () => {
-    await app.inject({
-      method: "POST",
-      url: "/admin-events",
-      payload: {
-        start: "2026-11-10T07:00:00.000Z",
-        end: "2026-11-10T08:00:00.000Z",
-      },
-    });
-
-    const res = await app.inject({ method: "GET", url: "/admin-events" });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.json().adminEvents).toHaveLength(1);
-    expect(res.json().adminEvents[0]).toMatchObject({
-      start: "2026-11-10T07:00:00.000Z",
-      end: "2026-11-10T08:00:00.000Z",
-    });
+    const day = res
+      .json()
+      .days.find((d: { date: string }) => d.date === monday);
+    expect(day.slots).toHaveLength(18);
+    expect(
+      day.slots.every((s: { status: string }) => s.status === "free"),
+    ).toBe(true);
   });
 
   test("пересекающиеся события не дают дубликатов слотов", async () => {
@@ -208,7 +188,7 @@ describe("HTTP API seam: события админа", () => {
       method: "POST",
       url: "/admin-events",
       payload: {
-        start: `${monday}T07:00:00.000Z`,
+        start: `${monday}T06:00:00.000Z`,
         end: `${monday}T08:00:00.000Z`,
       },
     });
@@ -216,22 +196,41 @@ describe("HTTP API seam: события админа", () => {
       method: "POST",
       url: "/admin-events",
       payload: {
-        start: `${monday}T07:00:00.000Z`,
-        end: `${monday}T07:30:00.000Z`,
+        start: `${monday}T06:00:00.000Z`,
+        end: `${monday}T07:00:00.000Z`,
       },
     });
 
     const res = await app.inject({
       method: "GET",
-      url: `/slots?date=${monday}&durationMinutes=30`,
+      url: `/slots?date=${monday}`,
     });
 
     const starts = res
       .json()
-      .days.flatMap((d: { slots: Array<{ start: string }> }) =>
-        d.slots.map((s) => s.start),
-      );
+      .days.find((d: { date: string }) => d.date === monday)
+      .slots.map((s: { start: string }) => s.start);
+    expect(starts).toHaveLength(18);
     expect(starts).toEqual([...new Set(starts)]); // без дубликатов
-    expect(starts).toHaveLength(2); // 07:00 и 07:30
+  });
+
+  test("список событий отдаёт созданные события", async () => {
+    await app.inject({
+      method: "POST",
+      url: "/admin-events",
+      payload: {
+        start: "2026-11-10T06:00:00.000Z",
+        end: "2026-11-10T07:00:00.000Z",
+      },
+    });
+
+    const res = await app.inject({ method: "GET", url: "/admin-events" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().adminEvents).toHaveLength(1);
+    expect(res.json().adminEvents[0]).toMatchObject({
+      start: "2026-11-10T06:00:00.000Z",
+      end: "2026-11-10T07:00:00.000Z",
+    });
   });
 });

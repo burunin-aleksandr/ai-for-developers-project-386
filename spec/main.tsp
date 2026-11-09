@@ -7,23 +7,6 @@ using TypeSpec.Http;
 })
 namespace Calendar;
 
-/** Длительность типа встречи — только пресеты 15/30/45/60 минут. */
-alias DurationMinutes = 15 | 30 | 45 | 60;
-
-/** Тип встречи: карточка, которую создаёт владелец. */
-model MeetingType {
-  id: int64;
-
-  @doc("Название типа встречи")
-  name: string;
-
-  @doc("Описание типа встречи")
-  description?: string;
-
-  @doc("Длительность в минутах (пресет)")
-  durationMinutes: DurationMinutes;
-}
-
 /** Ответ health-check сервиса. */
 model HealthStatus {
   @doc("Статус сервиса")
@@ -37,51 +20,10 @@ op getHealth(): {
   @body body: HealthStatus;
 };
 
-@get
-@route("/meeting-types")
-@doc("Список типов встреч владельца.")
-op listMeetingTypes(): {
-  @body body: {
-    meetingTypes: MeetingType[];
-  };
-};
-
-@post
-@route("/meeting-types")
-@doc("Создать тип встречи.")
-op createMeetingType(
-  @body body: MeetingTypeInput,
-): {
-  @statusCode _: 201;
-  @body body: MeetingType;
-};
-
-@put
-@route("/meeting-types/{id}")
-@doc("Отредактировать тип встречи. Удаление не предусмотрено.")
-op updateMeetingType(
-  @path id: int64,
-  @body body: MeetingTypeInput,
-): {
-  @body body: MeetingType;
-};
-
-/** Входные данные типа встречи (без id). */
-model MeetingTypeInput {
-  @doc("Название типа встречи")
-  name: string;
-
-  @doc("Описание типа встречи")
-  description?: string;
-
-  @doc("Длительность в минутах (пресет)")
-  durationMinutes: DurationMinutes;
-}
-
 /** Статус слота для гостя. */
 alias SlotStatus = "free" | "busy";
 
-/** Событие админа: интервал доступного времени поверх дефолтной сетки. */
+/** Событие админа: интервал, который блокирует пересекающиеся слоты. */
 model AdminEvent {
   @doc("Идентификатор события")
   id: int64;
@@ -93,7 +35,7 @@ model AdminEvent {
   end: utcDateTime;
 }
 
-/** Входные данные события админа (интервал в пределах окна 10:00–18:00 UTC+3). */
+/** Входные данные события админа (интервал в пределах окна 09:00–18:00 UTC+3). */
 model AdminEventInput {
   @doc("Начало события (UTC)")
   start: utcDateTime;
@@ -110,47 +52,26 @@ model Booking {
   @doc("Начало слота (UTC)")
   slotStart: utcDateTime;
 
-  @doc("Тип встречи, на который записался гость")
-  meetingTypeId: int64;
-
   @doc("Имя гостя")
   name: string;
 
   @doc("Email гостя")
   email: string;
 
-  @doc("Комментарий гостя")
-  comment?: string;
+  @doc("Момент создания записи (UTC)")
+  createdAt: utcDateTime;
 }
 
 /** Входные данные записи (валидируются на сервере). */
 model BookingInput {
-  @doc("Начало слота (UTC) — бронируется только целый слот")
+  @doc("Начало слота (UTC) — бронируется только целый 30-минутный слот")
   slotStart: utcDateTime;
-
-  @doc("Тип встречи — по его длительности нарезан сет, который видел гость")
-  meetingTypeId: int64;
 
   @doc("Имя гостя (обязательно)")
   name: string;
 
   @doc("Email гостя (обязательно)")
   email: string;
-
-  @doc("Комментарий гостя (необязательно)")
-  comment?: string;
-}
-
-/** Предстоящая запись для админа: только просмотр, отмена/изменение недоступны. */
-model UpcomingBooking {
-  @doc("Идентификатор записи")
-  id: int64;
-
-  @doc("Начало слота (UTC)")
-  slotStart: utcDateTime;
-
-  @doc("Название типа встречи")
-  meetingTypeName: string;
 }
 
 /** Слот. Время хранится в UTC; отображение — UTC+3. */
@@ -188,12 +109,10 @@ model MonthSlots {
 
 @get
 @route("/slots")
-@doc("Слоты месяца для гостя. Считаются на лету для месяца, в который попадает дата. При наличии событий админа нарезаются ими с шагом durationMinutes.")
+@doc("Слоты месяца для гостя. Фиксированная сетка 09:00–18:00 UTC+3 с шагом 30 минут; события админа и записи помечают пересекающиеся слоты занятыми.")
 op listSlots(
   @doc("Любая дата месяца (YYYY-MM-DD)")
   @query date: plainDate,
-  @doc("Длительность выбранного типа встречи для нарезки событий админа; без параметра — 15")
-  @query durationMinutes?: DurationMinutes,
 ): {
   @body body: MonthSlots;
 };
@@ -209,7 +128,7 @@ op listAdminEvents(): {
 
 @post
 @route("/admin-events")
-@doc("Создать событие админа — интервал в пределах окна бронирования 10:00–18:00 UTC+3.")
+@doc("Создать событие админа — интервал в пределах окна бронирования 09:00–18:00 UTC+3.")
 op createAdminEvent(
   @body body: AdminEventInput,
 ): {
@@ -219,7 +138,7 @@ op createAdminEvent(
 
 @delete
 @route("/admin-events/{id}")
-@doc("Удалить событие админа. Когда удалены все события, гость снова видит дефолтную сетку.")
+@doc("Удалить событие админа. Пересекавшиеся с ним слоты снова становятся свободными.")
 op deleteAdminEvent(
   @path id: int64,
 ): {
@@ -234,16 +153,16 @@ model ErrorBody {
 
 @get
 @route("/bookings")
-@doc("Предстоящие записи для админа (демо без авторизации): тип встречи, дата и время. Только просмотр — отмена и изменение недоступны.")
+@doc("Предстоящие записи для публичной страницы «Предстоящие события»: имя, email, слот и момент создания.")
 op listBookings(): {
   @body body: {
-    bookings: UpcomingBooking[];
+    bookings: Booking[];
   };
 };
 
 @post
 @route("/bookings")
-@doc("Записать гостя на целый слот. Слот сразу становится «Занято» для всех гостей. Одно время нельзя занять дважды — конфликт → 409.")
+@doc("Записать гостя на целый 30-минутный слот. Слот сразу становится «Занято» для всех гостей. Одно время нельзя занять дважды — конфликт → 409.")
 op createBooking(
   @body body: BookingInput,
 ): {

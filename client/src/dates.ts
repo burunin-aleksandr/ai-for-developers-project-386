@@ -39,6 +39,13 @@ export function fmtDate(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
+/** UTC ISO → дата YYYY-MM-DD в отображаемом поясе (UTC+3). */
+export function displayDateOf(iso: string): string {
+  return new Date(Date.parse(iso) + DISPLAY_UTC_OFFSET_HOURS * 3600_000)
+    .toISOString()
+    .slice(0, 10);
+}
+
 /** UTC ISO → HH:MM в UTC+3. */
 export function fmtTime(iso: string): string {
   const d = new Date(iso);

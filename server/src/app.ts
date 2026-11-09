@@ -2,12 +2,13 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { loadContractSchemas } from "./contract";
 import { AdminEventStore } from "./admin-events-store";
 import { BookingStore } from "./bookings-store";
-import { MeetingTypeStore } from "./meeting-types-store";
+import { intervalsIntersect } from "./intervals";
 import {
   isExistingSlotStart,
   isWithinBookingWindow,
   isValidDate,
   monthSlots,
+  slotInterval,
 } from "./slots";
 
 const ERROR_BODY = {
@@ -24,7 +25,6 @@ export type BuildAppOptions = {
 export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify();
   const schemas = loadContractSchemas();
-  const meetingTypes = new MeetingTypeStore();
   const adminEvents = new AdminEventStore();
   const bookings = new BookingStore();
 
@@ -46,7 +46,6 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
           type: "object",
           properties: {
             date: { type: "string" },
-            durationMinutes: { type: "number", enum: [15, 30, 45, 60] },
           },
           required: ["date"],
         },
@@ -58,19 +57,14 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
     },
     async (req, reply) => {
       const { date } = req.query as { date?: unknown };
-      // durationMinutes валидируется схемой (enum пресетов)
       if (!isValidDate(date)) {
         return reply
           .code(400)
           .send({ message: "Некорректная дата: ожидается YYYY-MM-DD" });
       }
-      const { durationMinutes } = req.query as {
-        durationMinutes?: number;
-      };
       return reply.send(
         monthSlots(date, {
           events: adminEvents.list(),
-          durationMinutes,
           busyIntervals: bookings.busyIntervals(),
           now: now(),
         }),
@@ -86,7 +80,7 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
           200: {
             type: "object",
             properties: {
-              bookings: { type: "array", items: schemas.UpcomingBooking },
+              bookings: { type: "array", items: schemas.Booking },
             },
             required: ["bookings"],
           },
@@ -94,13 +88,8 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
       },
     },
     async () => ({
-      // только предстоящие: тип встречи, дата и время — без личных данных
-      bookings: bookings.listUpcoming(now()).map((b) => ({
-        id: b.id,
-        slotStart: b.slotStart,
-        // тип нельзя удалить (GLOSSARY), поэтому у записи всегда есть тип
-        meetingTypeName: meetingTypes.get(b.meetingTypeId)!.name,
-      })),
+      // предстоящие записи: имя, email, слот и момент создания
+      bookings: bookings.listUpcoming(now()),
     }),
   );
 
@@ -117,14 +106,11 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
       },
     },
     async (req, reply) => {
-      const { slotStart, meetingTypeId, name, email, comment } =
-        req.body as {
-          slotStart: string;
-          meetingTypeId: number;
-          name: string;
-          email: string;
-          comment?: string;
-        };
+      const { slotStart, name, email } = req.body as {
+        slotStart: string;
+        name: string;
+        email: string;
+      };
 
       if (!name.trim() || !email.trim()) {
         return reply
@@ -132,44 +118,37 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
           .send({ message: "Имя и email обязательны" });
       }
 
-      // сет гостя нарезан длительностью выбранного типа встречи
-      const meetingType = meetingTypes.get(meetingTypeId);
-      if (!meetingType) {
-        return reply.code(400).send({ message: "Тип встречи не найден" });
-      }
-      const durationMinutes = meetingType.durationMinutes;
+      const moment = now();
 
-      // бронируется только целый слот из сета, который видел гость
-      if (
-        !isExistingSlotStart(slotStart, adminEvents.list(), {
-          durationMinutes,
-          now: now(),
-        })
-      ) {
+      // бронируется только целый слот из фиксированной сетки
+      if (!isExistingSlotStart(slotStart, { now: moment })) {
         return reply
           .code(400)
           .send({ message: "Слот не существует или уже в прошлом" });
       }
 
-      // антидубль: одно время нельзя занять дважды, даже разными длительностями
-      if (bookings.overlaps(slotStart, durationMinutes)) {
+      // антидубль: слот занят записью или событием админа
+      const interval = slotInterval(slotStart)!;
+      const eventBusy = adminEvents.list().some((event) =>
+        intervalsIntersect(
+          Date.parse(interval.start),
+          Date.parse(interval.end),
+          Date.parse(event.start),
+          Date.parse(event.end),
+        ),
+      );
+      if (bookings.overlaps(slotStart) || eventBusy) {
         return reply
           .code(409)
           .send({ message: "Слот уже занят — выберите другой" });
       }
 
-      return reply
-        .code(201)
-        .send(
-          bookings.create({
-            slotStart,
-            meetingTypeId,
-            durationMinutes,
-            name: name.trim(),
-            email: email.trim(),
-            ...(comment ? { comment } : {}),
-          }),
-        );
+      return reply.code(201).send(
+        bookings.create(
+          { slotStart, name: name.trim(), email: email.trim() },
+          moment,
+        ),
+      );
     },
   );
 
@@ -204,7 +183,7 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
       if (!isWithinBookingWindow(start, end)) {
         return reply.code(400).send({
           message:
-            "Интервал должен лежать в окне 10:00–18:00 UTC+3 и начинаться раньше, чем заканчиваться",
+            "Интервал должен лежать в окне 09:00–18:00 UTC+3 и начинаться раньше, чем заканчиваться",
         });
       }
       return reply.code(201).send(adminEvents.create({ start, end }));
@@ -229,65 +208,6 @@ export function buildApp({ now = () => new Date() }: BuildAppOptions = {}): Fast
         return reply.code(404).send({ message: "Событие не найдено" });
       }
       return reply.code(204).send();
-    },
-  );
-
-  app.get(
-    "/meeting-types",
-    {
-      schema: {
-        response: {
-          200: {
-            type: "object",
-            properties: {
-              meetingTypes: { type: "array", items: schemas.MeetingType },
-            },
-            required: ["meetingTypes"],
-          },
-        },
-      },
-    },
-    async () => ({ meetingTypes: meetingTypes.list() }),
-  );
-
-  app.post(
-    "/meeting-types",
-    {
-      schema: {
-        body: schemas.MeetingTypeInput,
-        response: { 201: schemas.MeetingType },
-      },
-    },
-    async (req, reply) => {
-      const created = meetingTypes.create(req.body as never);
-      return reply.code(201).send(created);
-    },
-  );
-
-  app.put(
-    "/meeting-types/:id",
-    {
-      schema: {
-        params: {
-          type: "object",
-          properties: { id: { type: "integer" } },
-          required: ["id"],
-        },
-        body: schemas.MeetingTypeInput,
-        response: {
-          200: schemas.MeetingType,
-          400: ERROR_BODY,
-          404: ERROR_BODY,
-        },
-      },
-    },
-    async (req, reply) => {
-      const { id } = req.params as { id: number };
-      const updated = meetingTypes.update(id, req.body as never);
-      if (!updated) {
-        return reply.code(404).send({ message: "Тип встречи не найден" });
-      }
-      return reply.send(updated);
     },
   );
 
